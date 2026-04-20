@@ -1,0 +1,13 @@
+employee_id,name,department,bank_account,status,salary_previous,salary
+EMP-00041,Amina Njoroge,Operations,BA-00129,active,3200,3200
+EMP-00042,David Otieno,Operations,BA-00130,active,3050,3720
+EMP-00043,Grace Wanjiku,Health,BA-00411,active,4100,4100
+EMP-00044,Samuel Kiptoo,Education,BA-00201,active,2900,2900
+EMP-00045,Fatima Ali,Infrastructure,BA-00318,terminated,3600,3600
+EMP-00046,Michael Kamau,Finance,BA-00501,active,5200,5200
+EMP-00047,James Mwangi,Operations,BA-00129,active,3300,3300
+EMP-00048,Emily Chen,Health,BA-00412,inactive,3900,3900
+EMP-00049,Olivia Smith,Education,BA-00202,active,2800,2800
+EMP-00050,Liam Johnson,Infrastructure,BA-00319,active,4500,4500
+EMP-00051,Noah Williams,Operations,BA-00131,active,3100,3100
+EMP-00052,Emma Brown,Finance,BA-00502,active,5000,5000

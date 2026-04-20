@@ -1,0 +1,16 @@
+date,vendor,category,department,amount,invoice_id,payment_method
+2026-03-03,Northbridge Medical,Supplies,Health,48210,INV-100239,ACH
+2026-03-05,Cedarline Facilities,Maintenance,Operations,22110,INV-100245,Wire
+2026-03-06,Atlas IT Services,Software,Infrastructure,7600,INV-100251,Card
+2026-03-08,Atlas IT Services,Software,Infrastructure,7600,INV-100251,Card
+2026-03-10,Keystone Office Co.,Office,Education,1840,INV-100269,ACH
+2026-03-11,Keystone Office Co.,Office,Education,1840,INV-100270,ACH
+2026-03-11,Keystone Office Co.,Office,Education,1840,INV-100271,ACH
+2026-03-14,Blue Ridge Logistics,Transport,Operations,12990,INV-100288,Wire
+2026-03-18,Suncrest Utilities,Utilities,Operations,33500,INV-100301,ACH
+2026-03-20,Northbridge Medical,Supplies,Health,98500,INV-100319,Wire
+2026-03-22,Cedarline Facilities,Maintenance,Operations,22110,INV-100334,Wire
+2026-03-25,Harborview Consulting,Professional Services,Finance,19250,INV-100360,ACH
+2026-03-27,Greenfield Builders,Capital Projects,Infrastructure,125000,INV-100372,Wire
+2026-03-28,Suncrest Utilities,Utilities,Operations,33500,INV-100381,ACH
+2026-03-29,Atlas IT Services,Software,Infrastructure,7600,INV-100389,Card

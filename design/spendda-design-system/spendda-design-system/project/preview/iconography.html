@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="card.css"><script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script></head>
+<body>
+<div class="card">
+  <div id="ic" style="display:flex;gap:18px;flex-wrap:wrap;color:#0b1220"></div>
+  <div class="muted" style="margin-top:12px;font-size:11px">lucide-react · stroke icons · inherit color · 16 / 18 / 20 px</div>
+  <script>
+    const names = ["layout-dashboard","bell","file-down","upload","activity","message-square","gauge","landmark","line-chart","lightbulb","building-2","sparkles","shield","settings","search","chevron-right","trending-down","alert-triangle"];
+    const el = document.getElementById("ic");
+    el.innerHTML = names.map(n => `<i data-lucide="${n}" style="width:22px;height:22px"></i>`).join("");
+    lucide.createIcons();
+  </script>
+</div>
+</body></html>
