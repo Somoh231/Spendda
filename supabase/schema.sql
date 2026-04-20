@@ -174,6 +174,304 @@ using (
 );
 
 -- ---------------------------------------------------------------------------
+-- Product core: profiles, uploads, reports, chat (multi-tenant)
+-- ---------------------------------------------------------------------------
+
+-- Onboarding profile data (mirrors cookie shape; stored per user+tenant).
+create table if not exists public.tenant_profiles (
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  profile jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  primary key (tenant_id, user_id)
+);
+
+create index if not exists tenant_profiles_user_id_idx on public.tenant_profiles(user_id);
+
+alter table public.tenant_profiles enable row level security;
+
+drop policy if exists "profiles_select_members" on public.tenant_profiles;
+create policy "profiles_select_members"
+on public.tenant_profiles
+for select
+using (
+  exists (
+    select 1 from public.tenant_memberships m
+    where m.tenant_id = tenant_profiles.tenant_id
+      and m.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "profiles_upsert_self" on public.tenant_profiles;
+create policy "profiles_upsert_self"
+on public.tenant_profiles
+for insert
+with check (user_id = auth.uid());
+
+drop policy if exists "profiles_update_self" on public.tenant_profiles;
+create policy "profiles_update_self"
+on public.tenant_profiles
+for update
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+
+-- Upload metadata foundation (separate from tenant_documents; can converge later).
+create table if not exists public.tenant_uploads (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  file_name text not null,
+  file_kind text not null check (file_kind in ('spend','payroll','other')) default 'other',
+  file_type text not null check (file_type in ('CSV','XLSX','XLS','OTHER')) default 'OTHER',
+  row_count int,
+  uploaded_at timestamptz not null default now(),
+  status text not null check (status in ('Uploaded','Processing','Ready','Archived','Failed')) default 'Ready',
+  notes text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists tenant_uploads_tenant_id_idx on public.tenant_uploads(tenant_id);
+create index if not exists tenant_uploads_uploaded_at_idx on public.tenant_uploads(uploaded_at);
+
+alter table public.tenant_uploads enable row level security;
+
+drop policy if exists "uploads_select_members" on public.tenant_uploads;
+create policy "uploads_select_members"
+on public.tenant_uploads
+for select
+using (
+  exists (
+    select 1 from public.tenant_memberships m
+    where m.tenant_id = tenant_uploads.tenant_id
+      and m.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "uploads_insert_members" on public.tenant_uploads;
+create policy "uploads_insert_members"
+on public.tenant_uploads
+for insert
+with check (
+  exists (
+    select 1 from public.tenant_memberships m
+    where m.tenant_id = tenant_uploads.tenant_id
+      and m.user_id = auth.uid()
+      and m.role in ('owner','admin','member','finance_lead','analyst')
+  )
+);
+
+-- Reports (metadata + audit; PDF bytes can live in storage later).
+create table if not exists public.tenant_reports (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  kind text not null,
+  title text not null,
+  status text not null check (status in ('Queued','Generating','Ready','Failed')) default 'Ready',
+  range_from date,
+  range_to date,
+  payload jsonb not null default '{}'::jsonb,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists tenant_reports_tenant_id_idx on public.tenant_reports(tenant_id);
+create index if not exists tenant_reports_created_at_idx on public.tenant_reports(created_at);
+
+alter table public.tenant_reports enable row level security;
+
+drop policy if exists "reports_select_members" on public.tenant_reports;
+create policy "reports_select_members"
+on public.tenant_reports
+for select
+using (
+  exists (
+    select 1 from public.tenant_memberships m
+    where m.tenant_id = tenant_reports.tenant_id
+      and m.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "reports_insert_members" on public.tenant_reports;
+create policy "reports_insert_members"
+on public.tenant_reports
+for insert
+with check (
+  exists (
+    select 1 from public.tenant_memberships m
+    where m.tenant_id = tenant_reports.tenant_id
+      and m.user_id = auth.uid()
+      and m.role in ('owner','admin','member','finance_lead','analyst')
+  )
+);
+
+-- Monthly email summary subscription foundation (tenant-scoped).
+create table if not exists public.tenant_email_subscriptions (
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  kind text not null check (kind in ('monthly_summary')) default 'monthly_summary',
+  email text not null,
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, user_id, kind)
+);
+
+alter table public.tenant_email_subscriptions enable row level security;
+
+drop policy if exists "email_subs_select_self" on public.tenant_email_subscriptions;
+create policy "email_subs_select_self"
+on public.tenant_email_subscriptions
+for select
+using (user_id = auth.uid());
+
+drop policy if exists "email_subs_upsert_self" on public.tenant_email_subscriptions;
+create policy "email_subs_upsert_self"
+on public.tenant_email_subscriptions
+for insert
+with check (user_id = auth.uid());
+
+drop policy if exists "email_subs_update_self" on public.tenant_email_subscriptions;
+create policy "email_subs_update_self"
+on public.tenant_email_subscriptions
+for update
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+
+-- Chat messages (AI Workspace thread persistence; UI stays the same).
+create table if not exists public.tenant_chat_messages (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  thread_id text not null default 'default',
+  role text not null check (role in ('user','assistant')),
+  content text not null,
+  detail_text text,
+  meta jsonb not null default '{}'::jsonb,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists tenant_chat_messages_thread_idx on public.tenant_chat_messages(tenant_id, thread_id, created_at);
+
+alter table public.tenant_chat_messages enable row level security;
+
+drop policy if exists "chat_select_members" on public.tenant_chat_messages;
+create policy "chat_select_members"
+on public.tenant_chat_messages
+for select
+using (
+  exists (
+    select 1 from public.tenant_memberships m
+    where m.tenant_id = tenant_chat_messages.tenant_id
+      and m.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "chat_insert_members" on public.tenant_chat_messages;
+create policy "chat_insert_members"
+on public.tenant_chat_messages
+for insert
+with check (
+  exists (
+    select 1 from public.tenant_memberships m
+    where m.tenant_id = tenant_chat_messages.tenant_id
+      and m.user_id = auth.uid()
+      and m.role in ('owner','admin','member','finance_lead','analyst','viewer')
+  )
+);
+
+-- ---------------------------------------------------------------------------
+-- Transaction-level analytics tables (tenant-scoped)
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.tenant_spend_transactions (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  date date,
+  vendor text,
+  amount numeric,
+  department text,
+  category text,
+  invoice_id text,
+  source_upload_id uuid references public.tenant_uploads(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists tenant_spend_tx_tenant_date_idx on public.tenant_spend_transactions(tenant_id, date desc);
+create index if not exists tenant_spend_tx_vendor_idx on public.tenant_spend_transactions(tenant_id, vendor);
+create index if not exists tenant_spend_tx_dept_idx on public.tenant_spend_transactions(tenant_id, department);
+
+alter table public.tenant_spend_transactions enable row level security;
+
+drop policy if exists "spend_tx_select_members" on public.tenant_spend_transactions;
+create policy "spend_tx_select_members"
+on public.tenant_spend_transactions
+for select
+using (
+  exists (
+    select 1 from public.tenant_memberships m
+    where m.tenant_id = tenant_spend_transactions.tenant_id
+      and m.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "spend_tx_insert_members" on public.tenant_spend_transactions;
+create policy "spend_tx_insert_members"
+on public.tenant_spend_transactions
+for insert
+with check (
+  exists (
+    select 1 from public.tenant_memberships m
+    where m.tenant_id = tenant_spend_transactions.tenant_id
+      and m.user_id = auth.uid()
+      and m.role in ('owner','admin','member','finance_lead','analyst')
+  )
+);
+
+create table if not exists public.tenant_payroll_rows (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  employee text,
+  date date,
+  wages numeric,
+  overtime numeric,
+  department text,
+  location text,
+  source_upload_id uuid references public.tenant_uploads(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists tenant_payroll_tenant_date_idx on public.tenant_payroll_rows(tenant_id, date desc);
+create index if not exists tenant_payroll_dept_idx on public.tenant_payroll_rows(tenant_id, department);
+
+alter table public.tenant_payroll_rows enable row level security;
+
+drop policy if exists "payroll_select_members" on public.tenant_payroll_rows;
+create policy "payroll_select_members"
+on public.tenant_payroll_rows
+for select
+using (
+  exists (
+    select 1 from public.tenant_memberships m
+    where m.tenant_id = tenant_payroll_rows.tenant_id
+      and m.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "payroll_insert_members" on public.tenant_payroll_rows;
+create policy "payroll_insert_members"
+on public.tenant_payroll_rows
+for insert
+with check (
+  exists (
+    select 1 from public.tenant_memberships m
+    where m.tenant_id = tenant_payroll_rows.tenant_id
+      and m.user_id = auth.uid()
+      and m.role in ('owner','admin','member','finance_lead','analyst')
+  )
+);
+
+-- ---------------------------------------------------------------------------
 -- Multi-tenant production extensions (plan tier, branding, audit, usage)
 -- ---------------------------------------------------------------------------
 

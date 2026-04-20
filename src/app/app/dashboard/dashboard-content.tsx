@@ -95,6 +95,8 @@ type SummaryResponse = {
   generatedAt?: string;
 };
 
+type InsightsAlertSnapshot = { duplicateCount: number; p95: number; aboveP95: number };
+
 type MlSummaryResponse = {
   org: { currency: string };
   summary: {
@@ -242,6 +244,7 @@ export default function DashboardPage() {
   const [welcomeHeadline, setWelcomeHeadline] = React.useState<string | null>(null);
   const [uploaded, setUploaded] = React.useState<UploadedInsights[]>([]);
   const [viewPreset, setViewPreset] = React.useState<"Auto" | "Finance Lead" | "Auditor" | "Minister / Executive">("Auto");
+  const [insightsAlerts, setInsightsAlerts] = React.useState<InsightsAlertSnapshot | null>(null);
 
   const entity = workspace.ready ? workspace.primaryEntity : profile?.activeEntity || "HQ";
   const orgLabel = entityNavLabel(profile?.orgType);
@@ -364,6 +367,31 @@ export default function DashboardPage() {
       alive = false;
     };
   }, [scope.entities, range.from, range.to]);
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (workspace.dataSource === "demo") return;
+        const url = new URL("/api/insights/anomalies", window.location.origin);
+        if (range.from) url.searchParams.set("from", range.from);
+        if (range.to) url.searchParams.set("to", range.to);
+        const res = await fetch(url.toString(), { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json().catch(() => ({}))) as any;
+        if (!alive) return;
+        const dupCount = Number(json?.anomalies?.duplicates?.count || 0);
+        const p95 = Number(json?.anomalies?.outliers?.p95 || 0);
+        const aboveP95 = Number(json?.anomalies?.outliers?.aboveP95 || 0);
+        if (dupCount || p95 || aboveP95) setInsightsAlerts({ duplicateCount: dupCount, p95, aboveP95 });
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [range.from, range.to]);
 
   React.useEffect(() => {
     let alive = true;
@@ -934,6 +962,29 @@ export default function DashboardPage() {
         },
       ];
       return items;
+    }
+    if (insightsAlerts) {
+      const fm = (n: number) => formatMoney(n, currency);
+      const base: FeedItem[] = [
+        {
+          tone: "warning",
+          title: "Large outliers",
+          detail: insightsAlerts.p95
+            ? `${insightsAlerts.aboveP95.toLocaleString()} transactions are ≥ P95 (${fm(insightsAlerts.p95)}) in the selected range.`
+            : "Outlier threshold not available yet (need more spend rows).",
+        },
+        {
+          tone: "destructive",
+          title: "Possible duplicates",
+          detail: `${insightsAlerts.duplicateCount.toLocaleString()} rows match vendor+invoice+amount duplicate patterns.`,
+        },
+        {
+          tone: "primary",
+          title: "Next action",
+          detail: "Open Alerts to triage by impact and assign owners (keep evidence links for audit).",
+        },
+      ];
+      return base;
     }
     const base: FeedItem[] = [
       { tone: "warning", title: "Spend spike", detail: "HR spend increased 14% WoW. Review vendor line items." },

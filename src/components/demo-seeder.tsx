@@ -26,6 +26,43 @@ export function DemoSeeder() {
 
     (async () => {
       try {
+        // Seed an example AI Workspace thread (demo-only, localStorage).
+        try {
+          const threadKey = clientId ? `spendda_ai_workspace_v3:${clientId}` : "spendda_ai_workspace_v3";
+          const existing = window.localStorage.getItem(threadKey);
+          if (!existing) {
+            window.localStorage.setItem(
+              threadKey,
+              JSON.stringify({
+                msgs: [
+                  {
+                    id: "demo-1",
+                    role: "assistant",
+                    content:
+                      "Welcome to the Spendda demo. I can summarize spend, flag anomalies, and draft board-ready takeaways based on the seeded sample uploads.",
+                    meta: { mode: "local" },
+                  },
+                  {
+                    id: "demo-2",
+                    role: "user",
+                    content: "What looks suspicious?",
+                  },
+                  {
+                    id: "demo-3",
+                    role: "assistant",
+                    content:
+                      "Top signals in the sample data:\n\n- Duplicate/repeat vendor+amount patterns (review invoices)\n- A small cluster of large outliers near the top percentile\n\nNext actions:\n- Open Alerts to triage by impact\n- Ask for “Top vendors” and “Which department overspent” to scope the investigation",
+                    meta: { mode: "local" },
+                  },
+                ],
+                savedAt: new Date().toISOString(),
+              }),
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+
         const profileRaw = window.localStorage.getItem(clientId ? `spendda_profile_v1:${clientId}` : "spendda_profile_v1");
         let entity = "HQ";
         if (profileRaw) {

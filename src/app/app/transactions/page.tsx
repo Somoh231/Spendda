@@ -14,6 +14,7 @@ import { DateRangePicker, type DateRange } from "@/components/ui/date-range-pick
 import { EntityMultiSelect } from "@/components/app/entity-multi-select";
 import { useProfile } from "@/lib/profile/client";
 import { useAnalyticsScope } from "@/components/app/analytics-scope";
+import { useWorkspaceData } from "@/components/app/workspace-data-provider";
 
 type Tx = {
   id: string;
@@ -35,6 +36,7 @@ type TxResponse = {
 
 export default function TransactionsPage() {
   const { profile } = useProfile();
+  const workspace = useWorkspaceData();
   const [q, setQ] = React.useState("");
   const deferredQ = useDeferredValue(q.trim());
   const [page, setPage] = React.useState(1);
@@ -59,7 +61,8 @@ export default function TransactionsPage() {
       try {
         setError(null);
         setData(null);
-        const url = new URL("/api/demo/transactions", window.location.origin);
+        const endpoint = workspace.dataSource === "demo" ? "/api/demo/transactions" : "/api/transactions";
+        const url = new URL(endpoint, window.location.origin);
         url.searchParams.set("page", String(page));
         url.searchParams.set("pageSize", String(pageSize));
         if (deferredQ) url.searchParams.set("q", deferredQ);

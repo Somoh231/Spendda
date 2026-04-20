@@ -171,11 +171,11 @@ export default function Home() {
               </div>
               <div className="space-y-3">
                 <h1 className="max-w-[24ch] text-balance text-[2rem] font-semibold leading-[1.06] tracking-[-0.035em] text-white sm:text-4xl lg:text-[2.65rem] lg:leading-[1.04]">
-                  Know what matters before it becomes a problem.
+                  See risks early. Lead with confidence.
                 </h1>
                 <p className="max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-slate-400 sm:text-lg">
-                  Spendda turns <span className="text-slate-200">spend, payroll, and board-ready narrative</span> into one
-                  governed surface — fast on uploads, serious about controls, integration-ready when IT says go.
+                  Spendda turns spend, payroll, and reporting into one intelligent workspace. Upload files, uncover risks,
+                  monitor performance, and generate decision-ready reports without enterprise complexity.
                 </p>
               </div>
               <div className="flex flex-col gap-2.5 pt-0.5 sm:flex-row sm:flex-wrap">

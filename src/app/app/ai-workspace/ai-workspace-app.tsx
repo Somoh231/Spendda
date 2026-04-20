@@ -44,7 +44,7 @@ import { upsertWorkspaceDataset, type WorkspaceDataset } from "@/lib/upload/data
 import { answerFromDataset } from "@/lib/ai/local-intelligence";
 import { finishCopilotMessage, spendDateCoveragePct, type LocalEngineAnswer } from "@/lib/ai/copilot-finish";
 import { wantsDeepDetail } from "@/lib/ai/intent-routing";
-import type { SpendTxn } from "@/lib/upload/dataset-store";
+import type { PayrollRow, SpendTxn } from "@/lib/upload/dataset-store";
 import { buildUploadPilotSnapshot } from "@/lib/workspace/upload-ai-context";
 import { mergeWorkspaceDatasetsForAnalyticsScope } from "@/lib/workspace/merge-scope-datasets";
 import { stripMarkdownForClipboard } from "@/lib/ai/workspace-copy";
@@ -119,6 +119,207 @@ type SessionPersist = {
   };
   savedAt?: string;
 };
+
+type CloudChatMsg = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  detailText?: string;
+  meta?: ChatMsg["meta"];
+  createdAt: string;
+};
+
+function detectedFieldsFromDataset(ds: WorkspaceDataset | null) {
+  if (!ds) return "—";
+  if (ds.kind === "spend") {
+    const rows = ds.rows as SpendTxn[];
+    const has = (k: keyof SpendTxn) => rows.some((r) => Boolean((r as any)[k]));
+    const out: string[] = [];
+    if (has("date")) out.push("date");
+    if (has("vendor")) out.push("vendor");
+    if (rows.some((r) => (r.amount || 0) > 0)) out.push("amount");
+    if (has("department")) out.push("department");
+    if (has("category")) out.push("category");
+    if (has("invoiceId")) out.push("invoice");
+    return out.length ? out.join(", ") : "—";
+  }
+  const rows = ds.rows as PayrollRow[];
+  const has = (k: keyof PayrollRow) => rows.some((r) => Boolean((r as any)[k]));
+  const out: string[] = [];
+  if (has("employeeName")) out.push("employee");
+  if (rows.some((r) => (r.salaryCurrent || 0) > 0)) out.push("wages");
+  if (has("department")) out.push("department");
+  if (has("status")) out.push("status");
+  if (has("bankAccount")) out.push("bank");
+  return out.length ? out.join(", ") : "—";
+}
+
+type InsightsSummaryResp = {
+  ok?: boolean;
+  summary?: {
+    spend?: { rowCount: number; positiveRowCount: number; totalPositive: number };
+    payroll?: { rowCount: number; positiveRowCount: number; totalWages: number; overtimeTotal: number };
+  };
+};
+
+type InsightsVendorsResp = { ok?: boolean; vendors?: Array<{ name: string; spend: number; pct: number }> };
+type InsightsDeptsResp = { ok?: boolean; departments?: Array<{ name: string; spend: number; pct: number }> };
+type InsightsAnomsResp = {
+  ok?: boolean;
+  anomalies?: {
+    outliers?: { p95: number; aboveP95: number; top: Array<{ date: string | null; vendor: string; amount: number; department: string; invoiceId: string }> };
+    duplicates?: { count: number; samples: Array<{ date: string | null; vendor: string; amount: number; department: string; invoiceId: string }> };
+  };
+};
+type InsightsForecastResp = { ok?: boolean; forecast?: { monthly: Array<{ month: string; total: number }>; forecastNext3: { next: number[]; avg: number } | null } };
+
+function money(n: number) {
+  const v = Number.isFinite(n) ? n : 0;
+  return `$${Math.round(v).toLocaleString()}`;
+}
+
+async function tryInsightsAnswer(questionLower: string, range: { from?: string; to?: string }) {
+  const wantsSummary = /\b(summarize|summarise|summary|executive summary|quick summary|this month)\b/i.test(questionLower);
+  const wantsVendors = /\b(top vendors?|vendor ranking|show vendors?)\b/i.test(questionLower);
+  const wantsDepts = /\b(department|departments)\b.*\b(overspend|spent|ranking|top)\b|\bwhich department\b/i.test(questionLower);
+  const wantsAnoms = /\b(suspicious|anomal|red flag|duplicate|duplicates|looks?\s+off|fishy)\b/i.test(questionLower);
+  const wantsForecast = /\b(forecast|next quarter|projection|projected)\b/i.test(questionLower);
+  const wantsPayroll = /\bpayroll|wages|salary|overtime\b/i.test(questionLower);
+
+  const params = new URLSearchParams();
+  if (range.from) params.set("from", range.from);
+  if (range.to) params.set("to", range.to);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+
+  // Always fetch summary for analytics-style queries (lightweight, used for grounding).
+  const sRes = await fetch(`/api/insights/summary${qs}`, { cache: "no-store" });
+  if (!sRes.ok) return null;
+  const sJson = (await sRes.json().catch(() => ({}))) as InsightsSummaryResp;
+  if (!sJson.ok || !sJson.summary) return null;
+
+  const spendTotal = sJson.summary.spend?.totalPositive ?? 0;
+  const spendRows = sJson.summary.spend?.rowCount ?? 0;
+  const payrollTotal = sJson.summary.payroll?.totalWages ?? 0;
+  const payrollRows = sJson.summary.payroll?.rowCount ?? 0;
+
+  let lines: string[] = [];
+  if (wantsSummary || (!wantsVendors && !wantsDepts && !wantsAnoms && !wantsForecast)) {
+    lines.push(`### Quick summary`);
+    if (spendRows) lines.push(`• Spend: **${money(spendTotal)}** across **${spendRows.toLocaleString()}** rows`);
+    if (payrollRows) lines.push(`• Payroll: **${money(payrollTotal)}** across **${payrollRows.toLocaleString()}** rows`);
+    if (!spendRows && !payrollRows) lines.push(`• No tenant rows in this range yet`);
+  }
+
+  if (wantsVendors) {
+    const vRes = await fetch(`/api/insights/vendors${qs}`, { cache: "no-store" });
+    if (vRes.ok) {
+      const vJson = (await vRes.json().catch(() => ({}))) as InsightsVendorsResp;
+      const top = vJson.vendors?.slice(0, 5) || [];
+      if (top.length) {
+        lines.push(`\n### Top vendors`);
+        top.forEach((v) => lines.push(`• **${v.name}** — ${money(v.spend)} (${v.pct.toFixed(1)}%)`));
+      }
+    }
+  }
+
+  if (wantsDepts) {
+    const dRes = await fetch(`/api/insights/departments${qs}`, { cache: "no-store" });
+    if (dRes.ok) {
+      const dJson = (await dRes.json().catch(() => ({}))) as InsightsDeptsResp;
+      const top = dJson.departments?.slice(0, 5) || [];
+      if (top.length) {
+        lines.push(`\n### Departments`);
+        top.forEach((d) => lines.push(`• **${d.name}** — ${money(d.spend)} (${d.pct.toFixed(1)}%)`));
+      }
+    }
+  }
+
+  if (wantsAnoms) {
+    const aRes = await fetch(`/api/insights/anomalies${qs}`, { cache: "no-store" });
+    if (aRes.ok) {
+      const aJson = (await aRes.json().catch(() => ({}))) as InsightsAnomsResp;
+      const p95 = aJson.anomalies?.outliers?.p95 ?? 0;
+      const dupC = aJson.anomalies?.duplicates?.count ?? 0;
+      lines.push(`\n### Suspicious signals`);
+      lines.push(`• Duplicate candidates: **${dupC.toLocaleString()}**`);
+      if (p95) lines.push(`• Large-ticket threshold (p95): **${money(p95)}**`);
+    }
+  }
+
+  if (wantsForecast) {
+    const fRes = await fetch(`/api/insights/forecast${qs}`, { cache: "no-store" });
+    if (fRes.ok) {
+      const fJson = (await fRes.json().catch(() => ({}))) as InsightsForecastResp;
+      const fc = fJson.forecast?.forecastNext3;
+      if (fc) {
+        lines.push(`\n### Forecast`);
+        lines.push(`• Next 3 months (trend): **${money(fc.next[0])}** · **${money(fc.next[1])}** · **${money(fc.next[2])}** (avg **${money(fc.avg)}**)`);
+      } else {
+        lines.push(`\n### Forecast`);
+        lines.push(`• Not enough dated spend history to forecast yet`);
+      }
+    }
+  }
+
+  if (wantsPayroll && payrollRows) {
+    lines.push(`\n_Note: payroll “high” is relative — if you tell me your revenue or budget target, I can compute ratios._`);
+  }
+
+  return lines.join("\n");
+}
+
+function fileTypeFromFilename(filename: string): "CSV" | "XLSX" | "XLS" | "OTHER" {
+  const ext = (filename || "").split(".").pop()?.toLowerCase();
+  if (ext === "csv") return "CSV";
+  if (ext === "xlsx") return "XLSX";
+  if (ext === "xls") return "XLS";
+  return "OTHER";
+}
+
+async function ingestSpendRowsToCloud(opts: { sourceUploadId: string; rows: SpendTxn[] }) {
+  const chunkSize = 800;
+  for (let i = 0; i < opts.rows.length; i += chunkSize) {
+    const chunk = opts.rows.slice(i, i + chunkSize);
+    // eslint-disable-next-line no-await-in-loop
+    await fetch("/api/ingest/spend", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceUploadId: opts.sourceUploadId,
+        rows: chunk.map((t) => ({
+          date: t.date,
+          vendor: t.vendor,
+          amount: t.amount,
+          department: t.department,
+          category: t.category,
+          invoiceId: t.invoiceId,
+        })),
+      }),
+    });
+  }
+}
+
+async function ingestPayrollRowsToCloud(opts: { sourceUploadId: string; rows: PayrollRow[] }) {
+  const chunkSize = 800;
+  for (let i = 0; i < opts.rows.length; i += chunkSize) {
+    const chunk = opts.rows.slice(i, i + chunkSize);
+    // eslint-disable-next-line no-await-in-loop
+    await fetch("/api/ingest/payroll", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceUploadId: opts.sourceUploadId,
+        rows: chunk.map((p) => ({
+          employee: p.employeeName,
+          wages: p.salaryCurrent,
+          overtime: 0,
+          department: p.department,
+          location: null,
+        })),
+      }),
+    });
+  }
+}
 
 function downloadText(filename: string, text: string, mime = "text/plain") {
   const blob = new Blob([text], { type: mime });
@@ -201,6 +402,11 @@ export function AiWorkspaceApp() {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
+  const cloudThreadId = React.useMemo(() => {
+    const t = clientId?.trim();
+    return t ? `workspace:${t}` : "default";
+  }, [clientId]);
+
   React.useEffect(() => {
     try {
       const raw = window.localStorage.getItem(sessionKeyForClient(clientId));
@@ -220,6 +426,40 @@ export function AiWorkspaceApp() {
       /* ignore */
     }
   }, [clientId]);
+
+  // Optional cloud thread hydrate. Keeps UI identical; falls back silently to localStorage.
+  React.useEffect(() => {
+    if (!workspace.ready || !hydrated) return;
+    if (!clientId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/chat/messages?threadId=${encodeURIComponent(cloudThreadId)}&limit=160`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; msgs?: CloudChatMsg[] };
+        if (!alive) return;
+        if (!json.ok || !Array.isArray(json.msgs) || !json.msgs.length) return;
+        setMsgs(
+          json.msgs.map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            detailText: m.detailText,
+            meta: m.meta ?? null,
+            streaming: false,
+            typing: false,
+          })),
+        );
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [workspace.ready, hydrated, clientId, cloudThreadId]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -253,6 +493,25 @@ export function AiWorkspaceApp() {
         savedAt: new Date().toISOString(),
       };
       window.localStorage.setItem(sessionKeyForClient(clientId), JSON.stringify(payload));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function tryPersistCloudMessage(m: Pick<ChatMsg, "role" | "content" | "detailText" | "meta">) {
+    if (!clientId) return;
+    try {
+      await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          threadId: cloudThreadId,
+          role: m.role,
+          content: m.content,
+          detailText: m.detailText,
+          meta: m.meta,
+        }),
+      });
     } catch {
       /* ignore */
     }
@@ -310,6 +569,38 @@ export function AiWorkspaceApp() {
     const dataset = ingestWorkspaceDataset(parsed.rows, parsed.filename, entity);
     upsertWorkspaceDataset(dataset, clientId);
     upsertUploadedInsights(insight, clientId);
+
+    // Best-effort cloud metadata persistence (multi-tenant, no UI changes).
+    try {
+      const metaRes = await fetch("/api/uploads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fileName: parsed.filename,
+          fileKind: detected === "payroll" ? "payroll" : "spend",
+          fileType: fileTypeFromFilename(parsed.filename),
+          rowCount: parsed.rows.length,
+          uploadedAt: new Date().toISOString(),
+          status: "Ready",
+        }),
+      });
+      const metaJson = (await metaRes.json().catch(() => ({}))) as { ok?: boolean; id?: string };
+      if (metaRes.ok && metaJson.ok && metaJson.id) {
+        if (dataset.kind === "spend") {
+          await ingestSpendRowsToCloud({
+            sourceUploadId: metaJson.id,
+            rows: dataset.rows as SpendTxn[],
+          });
+        } else {
+          await ingestPayrollRowsToCloud({
+            sourceUploadId: metaJson.id,
+            rows: dataset.rows as PayrollRow[],
+          });
+        }
+      }
+    } catch {
+      /* ignore */
+    }
     return {
       ok: true,
       filename: parsed.filename,
@@ -432,6 +723,10 @@ export function AiWorkspaceApp() {
 
       await sleep(320);
 
+      if (!options?.skipUserMessage) {
+        void tryPersistCloudMessage({ role: "user", content: userVisible, meta: null });
+      }
+
       const reportKind = parseReportExportIntent(trimmed);
       if (reportKind) {
         if (!hasDataset && !datasetOverride) {
@@ -493,6 +788,36 @@ export function AiWorkspaceApp() {
           .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) } as const)),
         { role: "user" as const, content: trimmed },
       ];
+
+      // Phase 2: Code calculates, AI explains (tenant-scoped insights endpoints).
+      // Only attempt this for analytics-like asks; fall back to local engine if unavailable.
+      const qLower = trimmed.toLowerCase();
+      const wantsEndpoint =
+        /\b(summarize|summary|executive summary|what looks suspicious|suspicious|anomal|top vendors?|vendor|department|overspend|payroll|wages|salary|forecast|next quarter|duplicate)\b/i.test(
+          qLower,
+        );
+      if (wantsEndpoint && workspace.dataSource !== "demo") {
+        try {
+          const insightText = await tryInsightsAnswer(qLower, scope.range);
+          if (insightText) {
+            await streamAssistantContent(assistantId, insightText);
+            setMsgs((prev) => {
+              const next = prev.map((m) =>
+                m.id === assistantId ? { ...m, content: insightText, streaming: false, typing: false } : m,
+              );
+              persistSession(next);
+              return next;
+            });
+            void tryPersistCloudMessage({ role: "assistant", content: insightText, meta: null });
+            setQ("");
+            requestAnimationFrame(() => textareaRef.current?.focus());
+            return;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
       const localRaw = answerFromDataset({
         question: trimmed,
         datasetSpend: spendDs,
@@ -556,6 +881,13 @@ export function AiWorkspaceApp() {
         );
         persistSession(next);
         return next;
+      });
+
+      void tryPersistCloudMessage({
+        role: "assistant",
+        content: local.text,
+        detailText: local.detailText,
+        meta: local.meta || null,
       });
 
       await appendIntelligenceAudit(
@@ -647,7 +979,9 @@ export function AiWorkspaceApp() {
       const payrollDs = ingested.payrollDs ?? workspace.payrollForEntity;
       setUploadWorkflow({ stage: "success", progressPct: 100, message: "Ready", detail: "Workspace updated." });
       toast.success("Dataset ingested", {
-        description: `${ingested.detected === "payroll" ? "Payroll" : "Spend"} · ${ingested.rowCount.toLocaleString()} rows`,
+        description:
+          `${ingested.detected === "payroll" ? "Payroll" : "Spend"} · ${ingested.rowCount.toLocaleString()} rows · ` +
+          `fields detected: ${detectedFieldsFromDataset(ingested.detected === "payroll" ? payrollDs : spendDs)}`,
       });
       if (!opts?.silent) {
         await runQuery(

@@ -64,14 +64,15 @@ export async function middleware(request: NextRequest) {
 
   const hasProfile = Boolean(request.cookies.get(PROFILE_COOKIE)?.value);
   const hasClient = Boolean(request.cookies.get(CLIENT_COOKIE)?.value);
+  const demo = request.cookies.get(DEMO_COOKIE)?.value;
+  const isDemo = demo === "1";
   const isPortal = request.cookies.get(PORTAL_COOKIE)?.value === "1";
   const homePath = isPortal ? PORTAL_HOME_PATH : APP_HOME_PATH;
   const desiredAfterAuth = pathname === "/app" ? homePath : pathname;
 
   // If Supabase isn't configured, fall back to a demo-cookie session.
   if (!url || !anonKey) {
-    const demo = request.cookies.get(DEMO_COOKIE)?.value;
-    const isAuthed = demo === "1";
+    const isAuthed = isDemo;
 
     if (!isAuthed) {
       const loginUrl = request.nextUrl.clone();
@@ -112,6 +113,45 @@ export async function middleware(request: NextRequest) {
     }
 
     // Prevent re-entering onboarding once completed.
+    if (hasProfile && pathname === ONBOARDING_PATH) {
+      const nextUrl = request.nextUrl.clone();
+      nextUrl.pathname = homePath;
+      return NextResponse.redirect(nextUrl);
+    }
+
+    return NextResponse.next();
+  }
+
+  // Demo session (master demo login) bypasses Supabase auth entirely.
+  // Keeps production auth separate while enabling frictionless demos.
+  if (isDemo) {
+    if (!hasClient) {
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.searchParams.set("redirectTo", desiredAfterAuth);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    if (isPortal && pathname.startsWith("/app") && !PORTAL_ALLOWED_PATHS.has(pathname)) {
+      const nextUrl = request.nextUrl.clone();
+      nextUrl.pathname = PORTAL_HOME_PATH;
+      return NextResponse.redirect(nextUrl);
+    }
+
+    if (pathname === "/app") {
+      const nextUrl = request.nextUrl.clone();
+      nextUrl.pathname = hasProfile ? homePath : ONBOARDING_PATH;
+      if (!hasProfile) nextUrl.searchParams.set("redirectTo", homePath);
+      return NextResponse.redirect(nextUrl);
+    }
+
+    if (!hasProfile && pathname !== ONBOARDING_PATH) {
+      const nextUrl = request.nextUrl.clone();
+      nextUrl.pathname = ONBOARDING_PATH;
+      nextUrl.searchParams.set("redirectTo", desiredAfterAuth);
+      return NextResponse.redirect(nextUrl);
+    }
+
     if (hasProfile && pathname === ONBOARDING_PATH) {
       const nextUrl = request.nextUrl.clone();
       nextUrl.pathname = homePath;

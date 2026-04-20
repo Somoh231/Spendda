@@ -202,7 +202,7 @@ function drawCover(doc: jsPDF, opts: EnterpriseExportOptions, logoDataUrl: strin
   doc.setFont("helvetica", "italic");
   doc.setFontSize(10);
   doc.setTextColor(100, 116, 139);
-  doc.text("Board-ready · Upload-derived metrics", 56, 388);
+  doc.text("Board-ready · Workspace-scoped metrics", 56, 388);
 }
 
 export async function buildMonthlyBoardPdfBlob(

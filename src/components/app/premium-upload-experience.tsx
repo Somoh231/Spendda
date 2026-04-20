@@ -88,6 +88,28 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function detectedFieldList(kind: "spend" | "payroll", maps: ReturnType<typeof getDefaultUploadMaps>) {
+  const picked: string[] = [];
+  if (kind === "spend") {
+    const m = maps.spend || {};
+    if (m.date) picked.push("date");
+    if (m.vendor) picked.push("vendor");
+    if (m.amount) picked.push("amount");
+    if (m.department) picked.push("department");
+    if (m.category) picked.push("category");
+    if (m.invoiceId) picked.push("invoice");
+  } else {
+    const m = maps.payroll || {};
+    if (m.name) picked.push("employee");
+    if (m.salary) picked.push("wages");
+    if (m.department) picked.push("department");
+    if (m.status) picked.push("status");
+    if (m.bankAccount) picked.push("bank");
+    if (m.employeeId) picked.push("employee id");
+  }
+  return picked.length ? picked.join(", ") : "—";
+}
+
 export type PremiumUploadExperienceProps = {
   entity: string;
   clientId?: string | null;
@@ -129,6 +151,7 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
     kind: "spend" | "payroll";
     rows: number;
     columns: number;
+    fieldsDetected: string;
   } | null>(null);
 
   const active = queue.find((q) => q.id === activeId) || null;
@@ -252,6 +275,79 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
       const dataset = ingestWorkspaceDataset(active.parsed.rows, active.parsed.filename, entity, overrides);
       upsertWorkspaceDataset(dataset, clientId);
       upsertUploadedInsights(insight, clientId);
+
+      // Best-effort cloud metadata persistence (tenant-scoped). UI remains unchanged.
+      try {
+        const ext = (active.parsed.filename || "").split(".").pop()?.toLowerCase();
+        const fileType = ext === "csv" ? "CSV" : ext === "xlsx" ? "XLSX" : ext === "xls" ? "XLS" : "OTHER";
+        const metaRes = await fetch("/api/uploads", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            fileName: active.parsed.filename,
+            fileKind: active.kind === "payroll" ? "payroll" : "spend",
+            fileType,
+            rowCount: active.parsed.rows.length,
+            uploadedAt: new Date().toISOString(),
+            status: "Ready",
+          }),
+        });
+        const metaJson = (await metaRes.json().catch(() => ({}))) as { ok?: boolean; id?: string };
+        if (metaRes.ok && metaJson.ok && metaJson.id) {
+          const chunkSize = 800;
+          if (dataset.kind === "spend") {
+            const rows = dataset.rows as {
+              date?: string;
+              vendor?: string;
+              amount?: number;
+              department?: string;
+              category?: string;
+              invoiceId?: string;
+            }[];
+            for (let i = 0; i < rows.length; i += chunkSize) {
+              const chunk = rows.slice(i, i + chunkSize);
+              // eslint-disable-next-line no-await-in-loop
+              await fetch("/api/ingest/spend", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  sourceUploadId: metaJson.id,
+                  rows: chunk.map((t) => ({
+                    date: t.date,
+                    vendor: t.vendor,
+                    amount: t.amount,
+                    department: t.department,
+                    category: t.category,
+                    invoiceId: t.invoiceId,
+                  })),
+                }),
+              });
+            }
+          } else {
+            const rows = dataset.rows as { employeeName?: string; salaryCurrent?: number; department?: string }[];
+            for (let i = 0; i < rows.length; i += chunkSize) {
+              const chunk = rows.slice(i, i + chunkSize);
+              // eslint-disable-next-line no-await-in-loop
+              await fetch("/api/ingest/payroll", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  sourceUploadId: metaJson.id,
+                  rows: chunk.map((p) => ({
+                    employee: p.employeeName,
+                    wages: p.salaryCurrent,
+                    overtime: 0,
+                    department: p.department,
+                    location: null,
+                  })),
+                }),
+              });
+            }
+          }
+        }
+      } catch {
+        /* ignore */
+      }
       const columnCount = getDefaultUploadMaps(active.parsed.rows).headers.length;
       appendUploadHistory(
         {
@@ -268,18 +364,23 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
       setHistoryLog(getUploadHistory(clientId));
       setCommitProgress(100);
       await sleep(200);
+      const maps = getDefaultUploadMaps(active.parsed.rows);
+      const detected = detectedFieldList(active.kind, maps);
       setLastSuccess({
         filename: active.parsed.filename,
         kind: active.kind,
         rows: active.parsed.rows.length,
         columns: columnCount,
+        fieldsDetected: detected,
       });
       const updatedQueue = queue.map((x) =>
         x.id === active.id ? { ...x, status: "imported" as const } : x,
       );
       setQueue(updatedQueue);
       toast.success("Import complete", {
-        description: `${active.kind === "payroll" ? "Payroll" : "Spend"} · ${active.parsed.rows.length.toLocaleString()} rows · ${columnCount} columns`,
+        description:
+          `${active.kind === "payroll" ? "Payroll" : "Spend"} · ${active.parsed.rows.length.toLocaleString()} rows · ` +
+          `${columnCount} columns · fields detected: ${detected}`,
       });
       const nextParsed = updatedQueue.find((x) => x.status === "parsed" && x.id !== active.id);
       const nextQueued = updatedQueue.find((x) => x.status === "queued");
@@ -677,9 +778,13 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
               <div className="font-semibold text-foreground">Import successful</div>
               <div className="mt-0.5 text-xs text-muted-foreground">
                 {lastSuccess.filename} · {lastSuccess.kind} · {lastSuccess.rows.toLocaleString()} rows ·{" "}
-                {lastSuccess.columns} columns detected
+                {lastSuccess.columns} columns · fields detected: {lastSuccess.fieldsDetected}
               </div>
             </div>
+          </div>
+          <div className="rounded-xl border border-border/50 bg-background/50 px-3 py-2 text-xs text-muted-foreground">
+            Quick summary: {lastSuccess.rows.toLocaleString()} rows imported. Next, run a summary or anomaly scan to get KPIs,
+            risks, and recommended actions from this dataset.
           </div>
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Suggested next steps</div>

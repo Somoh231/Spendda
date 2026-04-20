@@ -28,7 +28,7 @@ export function LoginForm() {
 
   const [error, setError] = React.useState<string | null>(null);
   const [ready, setReady] = React.useState(true);
-  const [demoReady, setDemoReady] = React.useState(true);
+  const [masterDemoReady, setMasterDemoReady] = React.useState(true);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -76,15 +76,24 @@ export function LoginForm() {
     window.location.href = redirectTo;
   }
 
-  async function demoSignIn() {
+  async function masterDemoLogin() {
     setError(null);
-    setDemoReady(false);
+    setMasterDemoReady(false);
     try {
-      window.location.href = `/api/auth/demo-login?redirectTo=${encodeURIComponent(redirectTo)}`;
+      const res = await fetch("/api/auth/demo-login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "demo@spendda.com", password: "Demo123!" }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      // Seed sample uploads instantly on first app load.
+      window.localStorage.setItem("spendda_seed_demo_v1", "1");
+      window.location.href = redirectTo;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start demo session");
     } finally {
-      setDemoReady(true);
+      setMasterDemoReady(true);
     }
   }
 
@@ -172,11 +181,11 @@ export function LoginForm() {
           <Button
             type="button"
             variant="outline"
-            onClick={demoSignIn}
-            disabled={!demoReady}
+            onClick={masterDemoLogin}
+            disabled={!masterDemoReady}
             className="h-11 rounded-full border-white/15 bg-white/5 text-white backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-white/10"
           >
-            {demoReady ? "Open demo workspace" : "Starting demo…"}
+            {masterDemoReady ? "Demo Login" : "Starting demo…"}
           </Button>
 
           <Button

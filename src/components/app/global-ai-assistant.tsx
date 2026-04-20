@@ -501,8 +501,74 @@ export function GlobalAiAssistant() {
       upsertWorkspaceDataset(dataset, clientId);
       upsertUploadedInsights(insight, clientId);
 
+      // Best-effort cloud metadata persistence (tenant-scoped).
+      try {
+        const ext = (parsed.filename || "").split(".").pop()?.toLowerCase();
+        const fileType = ext === "csv" ? "CSV" : ext === "xlsx" ? "XLSX" : ext === "xls" ? "XLS" : "OTHER";
+        const metaRes = await fetch("/api/uploads", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            fileName: parsed.filename,
+            fileKind: detected === "payroll" ? "payroll" : "spend",
+            fileType,
+            rowCount: parsed.rows.length,
+            uploadedAt: new Date().toISOString(),
+            status: "Ready",
+          }),
+        });
+        const metaJson = (await metaRes.json().catch(() => ({}))) as { ok?: boolean; id?: string };
+        if (metaRes.ok && metaJson.ok && metaJson.id) {
+          const chunkSize = 800;
+          if (dataset.kind === "spend") {
+            const rows = dataset.rows as { date?: string; vendor?: string; amount?: number; department?: string; category?: string; invoiceId?: string }[];
+            for (let i = 0; i < rows.length; i += chunkSize) {
+              const chunk = rows.slice(i, i + chunkSize);
+              // eslint-disable-next-line no-await-in-loop
+              await fetch("/api/ingest/spend", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  sourceUploadId: metaJson.id,
+                  rows: chunk.map((t) => ({
+                    date: (t as any).date,
+                    vendor: (t as any).vendor,
+                    amount: (t as any).amount,
+                    department: (t as any).department,
+                    category: (t as any).category,
+                    invoiceId: (t as any).invoiceId,
+                  })),
+                }),
+              });
+            }
+          } else {
+            const rows = dataset.rows as { employeeName?: string; salaryCurrent?: number; department?: string }[];
+            for (let i = 0; i < rows.length; i += chunkSize) {
+              const chunk = rows.slice(i, i + chunkSize);
+              // eslint-disable-next-line no-await-in-loop
+              await fetch("/api/ingest/payroll", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  sourceUploadId: metaJson.id,
+                  rows: chunk.map((p) => ({
+                    employee: (p as any).employeeName,
+                    wages: (p as any).salaryCurrent,
+                    overtime: 0,
+                    department: (p as any).department,
+                    location: null,
+                  })),
+                }),
+              });
+            }
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
       toast.success("Upload ingested", {
-        description: `${detected === "payroll" ? "Payroll" : "Spend"} · ${parsed.rows.length.toLocaleString()} rows`,
+        description: `${detected === "payroll" ? "Payroll" : "Spend"} · ${parsed.rows.length.toLocaleString()} rows · ready for summary`,
       });
 
       await runQuery(`I uploaded ${parsed.filename}. Summarize totals, anomalies, duplicates, trends, and recommended actions.`);

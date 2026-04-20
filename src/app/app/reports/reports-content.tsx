@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Download, FileDown, LayoutDashboard } from "lucide-react";
 import { jsPDF } from "jspdf";
@@ -39,7 +40,8 @@ import { tenantRoleCan } from "@/lib/tenants/permissions";
 import { useWorkspaceData } from "@/components/app/workspace-data-provider";
 import { useAnalyticsScope } from "@/components/app/analytics-scope";
 import { mergeWorkspaceDatasetsForAnalyticsScope } from "@/lib/workspace/merge-scope-datasets";
-import { buildMonthlyExecutiveReportFromUpload } from "@/lib/reports/monthly-executive-report";
+import { buildMonthlyExecutiveReportFromUpload, type MonthlyExecutiveReport } from "@/lib/reports/monthly-executive-report";
+import type { UploadInvestigationFlag } from "@/lib/workspace/upload-flags";
 import {
   buildMonthlyAnomaliesCsv,
   buildMonthlyBoardPdfBlob,
@@ -100,6 +102,11 @@ export default function ReportsPage() {
   const exportBusy = busy || !canExportReports;
   const [mounted, setMounted] = React.useState(false);
   const [items, setItems] = React.useState(() => [] as ReturnType<typeof getUploadedInsights>);
+  const [reportHistory, setReportHistory] = React.useState<
+    Array<{ id: string; title: string; kind: string; status: string; createdAt: string; rangeFrom?: string; rangeTo?: string }>
+  >([]);
+  const [monthlyBusy, setMonthlyBusy] = React.useState(false);
+  const [lastMonthly, setLastMonthly] = React.useState<{ rangeFrom?: string; rangeTo?: string; periodLabel: string } | null>(null);
 
   React.useEffect(() => {
     setMounted(true);
@@ -111,6 +118,70 @@ export default function ReportsPage() {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, [clientId]);
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/reports/history?limit=10", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; items?: any[] };
+        if (!alive) return;
+        if (json.ok && Array.isArray(json.items)) {
+          setReportHistory(
+            json.items.map((r) => ({
+              id: String(r.id),
+              title: String(r.title || r.kind || "Report"),
+              kind: String(r.kind || "report"),
+              status: String(r.status || "Ready"),
+              createdAt: String(r.createdAt || r.created_at || ""),
+              rangeFrom: r.rangeFrom || r.range_from || undefined,
+              rangeTo: r.rangeTo || r.range_to || undefined,
+            })),
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function recordReport(kind: string, title: string) {
+    try {
+      await fetch("/api/reports", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind,
+          title,
+          status: "Ready",
+          rangeFrom: scope.range.from,
+          rangeTo: scope.range.to,
+          payload: { source: "reports_page" },
+        }),
+      });
+      const res = await fetch("/api/reports/history?limit=10", { cache: "no-store" });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; items?: any[] };
+      if (json.ok && Array.isArray(json.items)) {
+        setReportHistory(
+          json.items.map((r) => ({
+            id: String(r.id),
+            title: String(r.title || r.kind || "Report"),
+            kind: String(r.kind || "report"),
+            status: String(r.status || "Ready"),
+            createdAt: String(r.createdAt || r.created_at || ""),
+            rangeFrom: r.rangeFrom || r.range_from || undefined,
+            rangeTo: r.rangeTo || r.range_to || undefined,
+          })),
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 
   const briefs = React.useMemo(() => buildUploadedExecutiveBriefs(items), [items]);
   const hasUploads = mounted && items.length > 0;
@@ -211,6 +282,42 @@ export default function ReportsPage() {
     if (r.from && r.to) return `${r.from} → ${r.to}`;
     if (r.from) return `From ${r.from}`;
     return `Up to ${r.to}`;
+  }
+
+  function isoDay(d: Date) {
+    return d.toISOString().slice(0, 10);
+  }
+
+  function previousRangeLike(r: DateRange): DateRange {
+    if (!r.from || !r.to) return {};
+    const from = new Date(`${r.from}T00:00:00Z`);
+    const to = new Date(`${r.to}T00:00:00Z`);
+    const days = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400000) + 1);
+    const prevTo = new Date(from.getTime() - 86400000);
+    const prevFrom = new Date(prevTo.getTime() - (days - 1) * 86400000);
+    return { from: isoDay(prevFrom), to: isoDay(prevTo) };
+  }
+
+  async function fetchJson<T>(url: string): Promise<T | null> {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) return null;
+      return (await res.json().catch(() => null)) as T | null;
+    } catch {
+      return null;
+    }
+  }
+
+  function fmtMoney(n: number, currency: string) {
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: currency || "USD",
+        maximumFractionDigits: 0,
+      }).format(n);
+    } catch {
+      return `$${Math.round(n).toLocaleString()}`;
+    }
   }
 
   // Keep the export system compatible: it still uses periodPreset + optional periodCustom label.
@@ -392,6 +499,7 @@ export default function ReportsPage() {
       const blob = await buildEnterprisePdfBlob(bundle, briefs, items, opts, "executive");
       downloadBlob("spendda-executive-brief.pdf", blob);
       toast.success("Executive PDF ready", { description: "Branded enterprise brief saved to downloads." });
+      void recordReport("executive_pdf", "Executive PDF");
     } catch (e) {
       toast.error("Executive PDF failed", {
         description: e instanceof Error ? e.message : "Could not build the enterprise PDF.",
@@ -409,6 +517,7 @@ export default function ReportsPage() {
       const blob = await buildEnterprisePdfBlob(bundle, briefs, items, opts, "board");
       downloadBlob("spendda-board-pack.pdf", blob);
       toast.success("Board pack PDF ready", { description: "Board-ready document saved to downloads." });
+      void recordReport("board_pack_pdf", "Board pack PDF");
       void appendPortalAudit({ action: "export.pdf", detail: "board_pack" });
       void recordTenantUsage({ kind: "export" });
     } catch (e) {
@@ -434,6 +543,230 @@ export default function ReportsPage() {
     });
   }
 
+  async function buildTenantMonthlyReport(opts: { range: DateRange; periodLabel: string }): Promise<MonthlyExecutiveReport | null> {
+    const currency = "USD";
+    const params = new URLSearchParams();
+    if (opts.range.from) params.set("from", opts.range.from);
+    if (opts.range.to) params.set("to", opts.range.to);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+
+    const prev = previousRangeLike(opts.range);
+    const prevParams = new URLSearchParams();
+    if (prev.from) prevParams.set("from", prev.from);
+    if (prev.to) prevParams.set("to", prev.to);
+    const prevQs = prevParams.toString() ? `?${prevParams.toString()}` : "";
+
+    type SummaryResp = {
+      ok?: boolean;
+      summary?: {
+        spend?: { totalPositive?: number; rowCount?: number };
+        payroll?: { totalWages?: number; rowCount?: number; overtimeTotal?: number };
+      };
+    };
+    type VendorsResp = { ok?: boolean; vendors?: Array<{ name: string; spend: number; pct: number }> };
+    type DeptsResp = { ok?: boolean; departments?: Array<{ name: string; spend: number; pct: number }> };
+    type AnomsResp = {
+      ok?: boolean;
+      anomalies?: {
+        outliers?: { p95: number; aboveP95: number; top: Array<{ date: string | null; vendor: string; amount: number; department: string; invoiceId: string }> };
+        duplicates?: { count: number; samples: Array<{ date: string | null; vendor: string; amount: number; department: string; invoiceId: string }> };
+      };
+    };
+    type ForecastResp = {
+      ok?: boolean;
+      forecast?: { monthly: Array<{ month: string; total: number }>; forecastNext3: { next: number[]; avg: number } | null };
+    };
+    type PayrollResp = {
+      ok?: boolean;
+      payroll?: { totalWages: number; overtimeTotal: number; rowCount: number };
+      departments?: Array<{ name: string; wages: number; overtime: number; rows: number }>;
+    };
+
+    const [summary, vendors, depts, anoms, forecast, payroll, prevSummary] = await Promise.all([
+      fetchJson<SummaryResp>(`/api/insights/summary${qs}`),
+      fetchJson<VendorsResp>(`/api/insights/vendors${qs}`),
+      fetchJson<DeptsResp>(`/api/insights/departments${qs}`),
+      fetchJson<AnomsResp>(`/api/insights/anomalies${qs}`),
+      fetchJson<ForecastResp>(`/api/insights/forecast${qs}`),
+      fetchJson<PayrollResp>(`/api/insights/payroll${qs}`),
+      prevQs ? fetchJson<SummaryResp>(`/api/insights/summary${prevQs}`) : Promise.resolve(null),
+    ]);
+
+    if (!summary?.ok) return null;
+
+    const spendTotal = summary.summary?.spend?.totalPositive ?? 0;
+    const spendRows = summary.summary?.spend?.rowCount ?? 0;
+    const payrollTotal = summary.summary?.payroll?.totalWages ?? 0;
+    const payrollRows = summary.summary?.payroll?.rowCount ?? 0;
+    if (!spendRows && !payrollRows) return null;
+
+    const prevSpend = prevSummary?.ok ? (prevSummary.summary?.spend?.totalPositive ?? 0) : 0;
+    const prevPayroll = prevSummary?.ok ? (prevSummary.summary?.payroll?.totalWages ?? 0) : 0;
+    const pct = (cur: number, prev: number) => (prev > 0 ? ((cur - prev) / prev) * 100 : null);
+    const spendDeltaPct = pct(spendTotal, prevSpend);
+    const payrollDeltaPct = pct(payrollTotal, prevPayroll);
+
+    const topVendor = vendors?.vendors?.[0];
+    const dupCount = anoms?.anomalies?.duplicates?.count ?? 0;
+    const p95 = anoms?.anomalies?.outliers?.p95 ?? 0;
+    const aboveP95 = anoms?.anomalies?.outliers?.aboveP95 ?? 0;
+
+    const exec: string[] = [];
+    exec.push(`Reporting period **${opts.periodLabel}** for **${entity}** — computed from tenant-scoped workspace rows.`);
+    if (spendRows) exec.push(`Spend: **${fmtMoney(spendTotal, currency)}** across **${spendRows.toLocaleString()}** rows.`);
+    if (payrollRows) exec.push(`Payroll: **${fmtMoney(payrollTotal, currency)}** across **${payrollRows.toLocaleString()}** rows.`);
+    if (spendDeltaPct !== null) exec.push(`Spend vs prior period: **${spendDeltaPct >= 0 ? "+" : ""}${spendDeltaPct.toFixed(1)}%**.`);
+    if (payrollDeltaPct !== null) exec.push(`Payroll vs prior period: **${payrollDeltaPct >= 0 ? "+" : ""}${payrollDeltaPct.toFixed(1)}%**.`);
+    if (topVendor) exec.push(`Top vendor: **${topVendor.name}** at **${topVendor.pct.toFixed(1)}%** of spend.`);
+    if (dupCount) exec.push(`Duplicates: **${dupCount.toLocaleString()}** candidate rows (vendor+invoice+amount).`);
+    if (p95) exec.push(`Large-ticket threshold (p95): **${fmtMoney(p95, currency)}**.`);
+
+    const riskFindings: UploadInvestigationFlag[] = [];
+    (anoms?.anomalies?.duplicates?.samples || []).slice(0, 12).forEach((r, idx) => {
+      riskFindings.push({
+        id: `tenant-dup-${idx}`,
+        title: `Possible duplicate · ${r.vendor || "Vendor"}${r.invoiceId ? ` · ${r.invoiceId}` : ""}`,
+        severity: "High",
+        date: (r.date || opts.range.to || opts.range.from || new Date().toISOString()).slice(0, 10),
+        score: 82,
+        entity,
+      });
+    });
+    (anoms?.anomalies?.outliers?.top || []).slice(0, 12).forEach((r, idx) => {
+      riskFindings.push({
+        id: `tenant-outlier-${idx}`,
+        title: `Large outlier · ${r.vendor || "Vendor"} · ${fmtMoney(r.amount, currency)}`,
+        severity: "Medium",
+        date: (r.date || opts.range.to || opts.range.from || new Date().toISOString()).slice(0, 10),
+        score: 68,
+        entity,
+      });
+    });
+
+    const anomalyRows = [
+      ...(anoms?.anomalies?.duplicates?.samples || []).map((r) => ({
+        date: (r.date || "—").slice(0, 10),
+        vendor: r.vendor || "",
+        department: r.department || "",
+        amount: r.amount || 0,
+        flags: "Possible duplicate",
+        invoiceId: r.invoiceId || "",
+      })),
+      ...(anoms?.anomalies?.outliers?.top || []).map((r) => ({
+        date: (r.date || "—").slice(0, 10),
+        vendor: r.vendor || "",
+        department: r.department || "",
+        amount: r.amount || 0,
+        flags: "Large outlier (p95+)",
+        invoiceId: r.invoiceId || "",
+      })),
+    ].slice(0, 500);
+
+    const departmentRanking =
+      (depts?.departments || []).map((d) => ({ name: d.name, spend: d.spend, pctOfTotal: (d.pct || 0) / 100 })) || [];
+
+    const payrollInsights: string[] = [];
+    const overtime = payroll?.payroll?.overtimeTotal ?? summary.summary?.payroll?.overtimeTotal ?? 0;
+    if (payrollRows) payrollInsights.push(`Overtime (scoped): **${fmtMoney(overtime || 0, currency)}**.`);
+    const topPayrollDept = payroll?.departments?.[0];
+    if (topPayrollDept) payrollInsights.push(`Top payroll department: **${topPayrollDept.name}** (${fmtMoney(topPayrollDept.wages, currency)}).`);
+    if (!payrollRows) payrollInsights.push("No payroll rows in this reporting range.");
+
+    const savingsOpportunities: string[] = [];
+    if (dupCount) savingsOpportunities.push("Investigate duplicates first: confirm invoice evidence and recover/reverse where applicable.");
+    if (departmentRanking.length) savingsOpportunities.push("Review the top 3 departments by spend for recurring vendor leakage and approval gaps.");
+    if (topVendor) savingsOpportunities.push(`Run a concentration review for **${topVendor.name}** (contract alignment, split invoices, price changes).`);
+
+    const recommendedActions: string[] = [
+      "Assign an owner for each high-severity exception and track resolution status before close.",
+      "Confirm duplicates with invoice IDs and supporting documents; recover or reverse where applicable.",
+      "Reforecast next period using the trend line and any known one-time spend.",
+    ];
+
+    const monthly = forecast?.forecast?.monthly || [];
+    const spendTrendsMonthly = monthly.map((m) => ({ month: m.month, total: m.total })).slice(-18);
+    const spendTrendsCaption =
+      spendTrendsMonthly.length >= 2
+        ? "Monthly totals from tenant spend rows in your selected range."
+        : "Add more dated spend history to strengthen trend visibility.";
+
+    const fc = forecast?.forecast?.forecastNext3;
+    const nextPeriodText = fc
+      ? `Next 3 months (trend): ${fc.next.map((v) => fmtMoney(v, currency)).join(" · ")} (avg ${fmtMoney(fc.avg, currency)}).`
+      : "Not enough dated spend history to forecast confidently yet.";
+
+    const healthScore = Math.max(40, Math.min(95, Math.round(88 - Math.min(0.25, dupCount / Math.max(1, spendRows)) * 120)));
+
+    return {
+      generatedAt: new Date().toISOString(),
+      periodLabel: opts.periodLabel,
+      organizationName,
+      entityLabel: entity,
+      currency,
+      executiveSummary: exec.slice(0, 7),
+      kpis: {
+        totalSpend: spendTotal,
+        payrollMonthly: payrollTotal,
+        flagsCount: dupCount + aboveP95,
+        savingsOpportunity: Math.max(0, Math.round(spendTotal * 0.01)),
+        forecastRiskScore: Math.round(Math.min(100, 35 + (dupCount ? 25 : 0) + (p95 ? 10 : 0))),
+        healthScore,
+      },
+      spendTrendsMonthly,
+      spendTrendsCaption,
+      departmentRanking: departmentRanking.slice(0, 12),
+      payrollInsights,
+      payrollHighRisk: dupCount,
+      payrollMediumRisk: aboveP95,
+      riskFindings: riskFindings.slice(0, 80),
+      savingsOpportunities: savingsOpportunities.length ? savingsOpportunities.slice(0, 8) : ["No material opportunities detected in this period."],
+      forecast: {
+        budgetShortfall: Math.max(0, Math.round(spendTotal * 0.01)),
+        retirementWavePct: 0,
+        payrollGrowthPct: payrollDeltaPct ?? 0,
+        overspendRiskScore: Math.round(Math.min(100, 40 + (spendDeltaPct && spendDeltaPct > 10 ? 20 : 0) + (dupCount ? 15 : 0))),
+        nextPeriodText,
+      },
+      recommendedActions: recommendedActions.slice(0, 10),
+      anomalyRows,
+      sourceFiles: { spend: "tenant database", payroll: "tenant database" },
+    };
+  }
+
+  async function generateMonthlyPilotPdf(rangeOverride?: DateRange, labelOverride?: string) {
+    if (!canExportReports) {
+      toast.error("Not permitted", { description: "Your role can view analytics, but cannot download reports." });
+      return;
+    }
+    const r = rangeOverride || scope.range;
+    const label = labelOverride || buildOpts().periodLabel;
+    setMonthlyBusy(true);
+    try {
+      const opts = buildOpts();
+      let report = await buildTenantMonthlyReport({ range: r, periodLabel: label });
+      if (!report) {
+        const uploadReport = buildUploadMonthlyReportOrNull();
+        if (!uploadReport) {
+          toast.error("Nothing to generate", { description: "No tenant rows (or uploads) in the selected date range." });
+          return;
+        }
+        report = uploadReport;
+      }
+      const blob = await buildMonthlyBoardPdfBlob(report, opts);
+      const filename = `spendda-monthly-report-${(r.to || new Date().toISOString().slice(0, 10)).slice(0, 10)}.pdf`;
+      downloadBlob(filename, blob);
+      toast.success("Monthly report ready", { description: "Professional PDF saved to downloads." });
+      setLastMonthly({ rangeFrom: r.from, rangeTo: r.to, periodLabel: label });
+      void recordReport("monthly_pilot_pdf", "Monthly Executive Report");
+      void appendPortalAudit({ action: "export.pdf", detail: "monthly_pilot" });
+      void recordTenantUsage({ kind: "export" });
+    } catch (e) {
+      toast.error("Monthly report failed", { description: e instanceof Error ? e.message : "Unknown error" });
+    } finally {
+      setMonthlyBusy(false);
+    }
+  }
+
   async function exportMonthlyBoardPdfUpload() {
     setBusy(true);
     try {
@@ -446,6 +779,7 @@ export default function ReportsPage() {
       const blob = await buildMonthlyBoardPdfBlob(report, opts);
       downloadBlob(`spendda-monthly-executive-${new Date().toISOString().slice(0, 10)}.pdf`, blob);
       toast.success("Monthly executive PDF ready", { description: "Board-ready pack from your uploads." });
+      void recordReport("monthly_upload_board_pdf", "Monthly executive PDF");
       void appendPortalAudit({ action: "export.pdf", detail: "monthly_upload_board" });
       void recordTenantUsage({ kind: "export" });
     } catch (e) {
@@ -723,11 +1057,74 @@ export default function ReportsPage() {
         </Badge>
       </div>
 
+      {!hasUploads ? (
+        <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/10 p-4 text-sm">
+          <div className="font-medium">No uploads yet</div>
+          <div className="text-muted-foreground">
+            Upload spend or payroll CSV/XLSX first. Reports will then generate from your tenant-scoped rows and respect your
+            date range filters.
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/app/upload-data" className="inline-flex">
+              <Button type="button" size="sm" className="rounded-xl">
+                <LayoutDashboard className="mr-2 h-4 w-4" />
+                Go to Upload
+              </Button>
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
       {!canXlsx ? (
         <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3 text-sm text-amber-950 dark:text-amber-50/95">
           Your workspace plan is <span className="font-semibold">{client?.planTier ?? "pilot"}</span>. PDF and CSV exports
           stay available; Excel workbooks unlock on Growth and Enterprise (see Client portal → Subscription readiness).
         </div>
+      ) : null}
+
+      {reportHistory.length ? (
+        <Card className="border-border/60 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">Recent report history</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-sm">
+            {reportHistory.slice(0, 8).map((r) => (
+              <div
+                key={r.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/10 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{r.title}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {r.rangeFrom || "…"} → {r.rangeTo || "…"} · {r.kind}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {r.kind === "monthly_pilot_pdf" ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 rounded-xl"
+                      disabled={monthlyBusy || busy}
+                      onClick={() =>
+                        void generateMonthlyPilotPdf(
+                          { from: r.rangeFrom, to: r.rangeTo },
+                          smartLabelFromRange({ from: r.rangeFrom, to: r.rangeTo }) || buildOpts().periodLabel,
+                        )
+                      }
+                    >
+                      Re-download
+                    </Button>
+                  ) : null}
+                  <Badge variant="outline" className="shrink-0">
+                    {r.status}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       ) : null}
 
       <Card className="border-border/60 shadow-md">
@@ -939,10 +1336,10 @@ export default function ReportsPage() {
             <div>
               <CardTitle className="text-base font-semibold">Premium monthly reporting</CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Board-ready pack built from <span className="font-medium text-foreground">uploaded</span> workspace data
-                only — executive summary, KPIs, spend trends, payroll, risks, savings, forecast, and actions. Uses your
-                global <span className="font-medium text-foreground">analytics date range</span> and entity scope (same
-                as dashboards).
+                Board-ready pack built from your <span className="font-medium text-foreground">tenant workspace data</span>{" "}
+                by default — executive summary, KPIs, trends, vendor/department breakdowns, anomalies, and actions. Uses
+                your global <span className="font-medium text-foreground">analytics date range</span> and entity scope
+                (same as dashboards). Falls back to upload-mode exports when tenant rows are unavailable.
               </p>
             </div>
           </div>
@@ -957,6 +1354,42 @@ export default function ReportsPage() {
           )}
         </CardHeader>
         <CardContent className="grid gap-4">
+          <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/10 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-medium">Monthly report (pilot-ready)</div>
+              <Badge variant="outline" className="shrink-0">
+                {scope.range.from || scope.range.to ? smartLabelFromRange(scope.range) : "All time"}
+              </Badge>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                className="rounded-xl"
+                disabled={monthlyBusy || busy}
+                onClick={() => void generateMonthlyPilotPdf()}
+              >
+                {monthlyBusy ? "Generating…" : "Generate Monthly Report"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl"
+                disabled={monthlyBusy || busy}
+                onClick={() => {
+                  const r = lastMonthly ? { from: lastMonthly.rangeFrom, to: lastMonthly.rangeTo } : scope.range;
+                  const label = lastMonthly?.periodLabel || buildOpts().periodLabel;
+                  void generateMonthlyPilotPdf(r, label);
+                }}
+              >
+                Download Monthly Report
+              </Button>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Executive summary, spend + payroll rollups, vendor/department breakdowns, anomalies, and actions. Saved to
+              report history for re-download.
+            </div>
+          </div>
+
           {!canExportMonthlyUpload ? (
             <p className="text-sm text-muted-foreground">
               {workspace.dataSource === "upload"

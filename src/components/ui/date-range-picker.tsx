@@ -13,6 +13,7 @@ export type DateRangePreset =
   | "this_month"
   | "last_month"
   | "last_30d"
+  | "last_90d"
   | "qtd"
   | "ytd"
   | "custom";
@@ -46,6 +47,7 @@ function presetToRange(preset: DateRangePreset): DateRange {
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   if (preset === "last_30d") return { from: isoDate(addDaysUTC(today, -29)), to: isoDate(today) };
+  if (preset === "last_90d") return { from: isoDate(addDaysUTC(today, -89)), to: isoDate(today) };
   if (preset === "ytd") return { from: isoDate(startOfYear(today)), to: isoDate(today) };
   if (preset === "qtd") return { from: isoDate(startOfQuarter(today)), to: isoDate(today) };
   if (preset === "this_month") return { from: isoDate(startOfMonth(today)), to: isoDate(today) };
@@ -66,6 +68,7 @@ export function getDateRangeForPreset(preset: DateRangePreset): DateRange {
 
 const PRESET_OPTIONS: Array<[DateRangePreset, string]> = [
   ["last_30d", "Last 30 days"],
+  ["last_90d", "Last 90 days"],
   ["this_month", "This month"],
   ["last_month", "Last month"],
   ["qtd", "Quarter to date"],
@@ -141,6 +144,7 @@ export function DateRangePicker({
             ["this_month", "This Month"],
             ["last_month", "Last Month"],
             ["last_30d", "Last 30 Days"],
+            ["last_90d", "Last 90 Days"],
             ["qtd", "Quarter to Date"],
             ["ytd", "Year to Date"],
             ["custom", "Custom"],
