@@ -19,7 +19,7 @@ function OnboardingFallback() {
         <div className="h-7 w-28 animate-pulse rounded-full bg-white/10" />
       </div>
       <div className="flex flex-wrap gap-2">
-        {Array.from({ length: 6 }).map((_, i) => (
+        {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="h-8 w-20 animate-pulse rounded-full bg-white/10" />
         ))}
       </div>

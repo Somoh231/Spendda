@@ -5,10 +5,12 @@ import type { UploadPilotSnapshot } from "@/lib/workspace/upload-ai-context";
 import type { UploadAnalyticsSnapshot } from "@/lib/workspace/upload-analytics-engine";
 import { buildUploadAnalyticsSnapshot } from "@/lib/workspace/upload-analytics-engine";
 import {
+  detectMessageIntent,
   mergeUserTurnsOnly,
   routeUserIntent,
   shouldRunDatasetAnalytics,
   wantsDeepDetail,
+  type MessageIntent,
 } from "@/lib/ai/intent-routing";
 import {
   buildStructuredWorkspaceAnalytics,
@@ -171,6 +173,8 @@ export function answerFromDataset(opts: {
   uploadPilot?: UploadPilotSnapshot | null;
   /** Recent turns (user + assistant) for follow-up finance questions — last messages only. */
   conversationTurns?: ReadonlyArray<{ role: "user" | "assistant"; content: string }>;
+  /** When set (e.g. from AI Workspace), drives empty-state copy when there are no rows. */
+  messageIntent?: MessageIntent;
 }) {
   const q = userQuestionFromPrompt(opts.question);
   const ql = q.toLowerCase();
@@ -210,6 +214,69 @@ export function answerFromDataset(opts: {
   const mergedUser = mergeUserTurnsOnly(q, opts.conversationTurns);
   const mode = routeUserIntent(q, opts.conversationTurns);
   const runFinance = shouldRunDatasetAnalytics(mode);
+
+  if (!hasAny) {
+    const intent = opts.messageIntent ?? detectMessageIntent(q, opts.conversationTurns);
+
+    if (intent === "data_question") {
+      return {
+        text:
+          "I don't have any data to work with yet. Upload a CSV or Excel file — QuickBooks export, Gusto payroll, or any spreadsheet — and I'll give you specific answers based on your actual numbers.",
+        kind: "empty" as const,
+        followUps: ["Upload a file", "What formats work?", "How does this work?"],
+        meta: { sources, confidencePct: 0, mode: "local" as const },
+      };
+    }
+
+    if (intent === "help_question") {
+      return {
+        kind: "intent_help" as const,
+        text:
+          "I'm your financial analysis assistant. Upload a spend or payroll file and I can tell you: your top vendors and what they cost, whether your payroll is in a healthy range, anything that looks unusual or duplicated, and how this month compares to last month. I can also generate a monthly PDF report from your data.",
+        followUps: ["Upload a file", "What file formats work?", "Show me an example"],
+        meta: { sources, confidencePct: 0, mode: "local" as const },
+      };
+    }
+
+    if (intent === "upload_prompt") {
+      return {
+        kind: "intent_upload" as const,
+        text:
+          "You can upload CSV or Excel files — QuickBooks exports, Gusto payroll reports, Square exports, or any spreadsheet with dates, amounts, and vendor or employee names. Just drag a file onto this chat or use the paperclip button below.",
+        followUps: ["Upload a file now"],
+        meta: { sources, confidencePct: 0, mode: "local" as const },
+      };
+    }
+
+    // conversational (default when no rows)
+    const qt = ql.trim();
+    if (/^(thanks|thank you|thx|ty)\b/i.test(qt) && qt.length < 80) {
+      return {
+        kind: "intent_thanks" as const,
+        text: "Of course. Let me know if there's anything else.",
+        meta: { sources, confidencePct: 0, mode: "local" as const },
+      };
+    }
+    if (/\b(how are you|how's it going|how is it going|hows it going)\b/i.test(ql)) {
+      return {
+        kind: "chat_conversational" as const,
+        text: "Doing well — ready to dig into your numbers whenever you are. What would you like to know?",
+        meta: { sources, confidencePct: 0, mode: "local" as const },
+      };
+    }
+    if (/^(hi|hello|hey|yo|sup)\b/i.test(qt) || /^good (morning|afternoon|evening)\b/i.test(qt)) {
+      return {
+        kind: "chat_conversational" as const,
+        text: "Hey! Ready to help whenever you are. Drop a file in and I'll tell you exactly what's happening in your numbers.",
+        meta: { sources, confidencePct: 0, mode: "local" as const },
+      };
+    }
+    return {
+      kind: "chat_conversational" as const,
+      text: "I'm here whenever you want to chat or dig into numbers. What can I help with?",
+      meta: { sources, confidencePct: 0, mode: "local" as const },
+    };
+  }
 
   const uploadAnalytics: UploadAnalyticsSnapshot | null = hasAny
     ? opts.uploadPilot?.analytics ??
@@ -286,27 +353,6 @@ export function answerFromDataset(opts: {
     return {
       kind: "intent_upload" as const,
       text: "Use **Upload** in the app or drop CSV/XLSX here, then ask me to dig in.",
-      meta: { sources, confidencePct: 0, mode: "local" as const },
-    };
-  }
-
-  if (!hasAny) {
-    if (runFinance) {
-      return {
-        text:
-          `I don't have any data to work with yet for **${entity}**.\n\n` +
-          `Upload a CSV or Excel file — spend export, payroll report, or QuickBooks export — ` +
-          `and I'll give you specific answers: top vendors, payroll ratios, anomalies, and more.\n\n` +
-          `I won't invent numbers without real data.`,
-        kind: "empty" as const,
-        meta: { sources, confidencePct: 0, mode: "local" as const },
-      };
-    }
-    return {
-      kind: "chat_conversational" as const,
-      text:
-        `No data uploaded yet. Drop a CSV or Excel file onto the chat and I'll analyze it — ` +
-        `vendor breakdown, payroll health, anomalies, whatever you need.`,
       meta: { sources, confidencePct: 0, mode: "local" as const },
     };
   }

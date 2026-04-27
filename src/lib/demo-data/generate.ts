@@ -92,8 +92,19 @@ export function generateDemoDataset(opts: GenerateOptions = {}): DemoDataset {
 
   const org: Organization = {
     id: "ORG-DEMO",
-    name: opts.organizationName ?? "Republic Public Finance Authority",
-    sector: opts.sector ?? "Government",
+    name:
+      opts.organizationName ??
+      (pack === "home-care-us"
+        ? "Sunrise Home Care"
+        : pack === "childcare-us"
+          ? "Bright Futures Childcare"
+          : pack === "restaurant-us"
+            ? "Mesa Verde Kitchen"
+            : pack === "sme-us"
+              ? "Oakwood Services LLC"
+              : "Republic Public Finance Authority"),
+    // Sector union has no "Private Company"; Private Sector is the SME-appropriate default.
+    sector: opts.sector ?? (isUsb ? "Private Sector" : "Government"),
     currency,
   };
 
@@ -137,45 +148,43 @@ export function generateDemoDataset(opts: GenerateOptions = {}): DemoDataset {
               ]
   ).map((name, idx) => ({ id: `CO-${idx + 1}`, name }));
 
-  const deptNames =
-    pack === "home-care-us"
-      ? ["Skilled Nursing", "Personal Care", "Companion Care", "Physical Therapy"]
-      : pack === "childcare-us"
-        ? ["Center 1 - Main St", "Center 2 - Oak Ave", "Center 3 - Park Blvd"]
-        : pack === "restaurant-us"
-          ? ["Downtown", "Westside", "Airport"]
-          : pack === "sme-us"
-            ? ["Operations", "Sales", "Service Delivery", "Admin"]
-            : [
-                "Operations",
-                "Procurement",
-                "Finance",
-                "HR",
-                "Payroll",
-                "Clinical Services",
-                "Maintenance",
-                "Capital Projects",
-                "IT Services",
-                "Logistics",
-                "Audit & Compliance",
-                "Administration",
-                "Program Delivery",
-              ];
-
   const departments: Department[] = [];
   let deptIdx = 1;
   if (isUsb) {
+    const usDeptNames =
+      pack === "home-care-us"
+        ? ["Skilled Nursing", "Personal Care", "Companion Care", "Physical Therapy", "Administration"]
+        : pack === "childcare-us"
+          ? ["Center 1 - Main St", "Center 2 - Oak Ave", "Center 3 - Park Blvd", "Administration"]
+          : pack === "restaurant-us"
+            ? ["Downtown", "Westside", "Airport", "Administration"]
+            : ["Operations", "Sales", "Admin", "Finance"];
     const min = ministries[0]!;
-    for (const co of counties) {
-      // For US packs, treat "departments" as the primary entity lines/locations.
+    for (const dn of usDeptNames) {
+      const co = counties.find((c) => c.name === dn) ?? counties[0]!;
       departments.push({
         id: `DEP-${deptIdx++}`,
-        name: co.name,
+        name: dn,
         ministryId: min.id,
         countyId: co.id,
       });
     }
   } else {
+    const deptNames = [
+      "Operations",
+      "Procurement",
+      "Finance",
+      "HR",
+      "Payroll",
+      "Clinical Services",
+      "Maintenance",
+      "Capital Projects",
+      "IT Services",
+      "Logistics",
+      "Audit & Compliance",
+      "Administration",
+      "Program Delivery",
+    ];
     for (const min of ministries) {
       for (const co of counties) {
         const deptCount = rng.int(2, 4);

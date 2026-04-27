@@ -28,12 +28,10 @@ import {
 } from "lucide-react";
 
 import { SpenddaResponsiveContainer } from "@/components/app/spendda-responsive-container";
-import { ExternalIntelligenceWorkspaceStrip } from "@/components/app/external-intelligence-workspace-strip";
 import { FileDropzone } from "@/components/file-dropzone";
 import { WorkspaceMarkdown } from "@/components/app/workspace-markdown";
-import { useWorkspaceData } from "@/components/app/workspace-data-provider";
+import { useWorkspaceData, type WorkspaceDataSource } from "@/components/app/workspace-data-provider";
 import { useAnalyticsScope } from "@/components/app/analytics-scope";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { appendIntelligenceAudit } from "@/lib/intelligence/audit-log";
 import { buildIntelligenceBrief } from "@/lib/intelligence/brief";
@@ -43,12 +41,13 @@ import { getUploadedInsights, upsertUploadedInsights } from "@/lib/upload/storag
 import { upsertWorkspaceDataset, type WorkspaceDataset } from "@/lib/upload/dataset-store";
 import { answerFromDataset } from "@/lib/ai/local-intelligence";
 import { finishCopilotMessage, spendDateCoveragePct, type LocalEngineAnswer } from "@/lib/ai/copilot-finish";
-import { wantsDeepDetail } from "@/lib/ai/intent-routing";
+import { detectMessageIntent, wantsDeepDetail } from "@/lib/ai/intent-routing";
 import type { PayrollRow, SpendTxn } from "@/lib/upload/dataset-store";
 import { buildUploadPilotSnapshot } from "@/lib/workspace/upload-ai-context";
 import { mergeWorkspaceDatasetsForAnalyticsScope } from "@/lib/workspace/merge-scope-datasets";
 import { stripMarkdownForClipboard } from "@/lib/ai/workspace-copy";
 import { useProfile } from "@/lib/profile/client";
+import type { OnboardingProfile } from "@/lib/profile/types";
 import { useClientSession } from "@/hooks/use-client-session";
 import { cn } from "@/lib/utils";
 import {
@@ -71,6 +70,13 @@ function genMsgId() {
     return `m-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   }
 }
+
+const NO_DATA_SUGGESTIONS = [
+  "What will you tell me from my data?",
+  "What file formats work?",
+  "How does this work?",
+  "Can I use a QuickBooks export?",
+];
 
 function getSuggestedQuestions(orgType?: string): string[] {
   switch (orgType) {
@@ -109,6 +115,29 @@ function getSuggestedQuestions(orgType?: string): string[] {
   }
 }
 
+function getWorkspaceSuggestionChips(hasUpload: boolean, orgType?: string): string[] {
+  return hasUpload ? getSuggestedQuestions(orgType) : NO_DATA_SUGGESTIONS;
+}
+
+function userBubbleInitials(profile: OnboardingProfile | null | undefined): string {
+  if (!profile) return "U";
+  const r = profile.role;
+  if (r === "Finance Lead") return "FL";
+  const parts = r.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0]![0]}${parts[1]![0]}`.toUpperCase();
+  return r.slice(0, 2).toUpperCase();
+}
+
+function kpiHintTrendClass(hint: string | undefined): string {
+  if (!hint) return "text-muted-foreground";
+  const h = hint.toLowerCase();
+  if (/\b(high|up|risk|over|above|alert|warn|bad)\b/.test(h) || h.includes("↑")) return "text-destructive";
+  if (/\b(ok|healthy|good|low risk|on target|stable)\b/.test(h) || h.includes("↓")) {
+    return "text-emerald-600 dark:text-emerald-400";
+  }
+  return "text-muted-foreground";
+}
+
 const AFTER_UPLOAD = ["Why did payroll rise?", "Show duplicate payments", "Build monthly report"];
 
 type ChatMsg = {
@@ -120,6 +149,8 @@ type ChatMsg = {
   streaming?: boolean;
   /** True while model is “thinking” before first streamed token */
   typing?: boolean;
+  /** Shown under assistant replies — how the answer was grounded */
+  assistantContextBadge?: "upload" | "general" | "demo";
   viz?: { type: "bar" | "line"; title: string; data: unknown[] } | null;
   followUps?: string[];
   kpis?: Array<{ label: string; value: string; hint?: string }>;
@@ -137,6 +168,94 @@ type ChatMsg = {
     mode?: "local" | "openai";
   } | null;
 };
+
+function spendDateRange(rows: SpendTxn[] | null | undefined): { from: string | null; to: string | null } {
+  if (!rows?.length) return { from: null, to: null };
+  let from: string | null = null;
+  let to: string | null = null;
+  rows.forEach((r) => {
+    const d = (r.date || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    if (!from || d < from) from = d;
+    if (!to || d > to) to = d;
+  });
+  return { from, to };
+}
+
+function spendRowsInScope(rows: SpendTxn[], range: { from?: string; to?: string }) {
+  return rows.filter((t) => {
+    if (!range.from && !range.to) return true;
+    if (!t.date) return true;
+    if (range.from && t.date < range.from) return false;
+    if (range.to && t.date > range.to) return false;
+    return true;
+  });
+}
+
+function priorTurnsForIntent(msgs: ChatMsg[]): ReadonlyArray<{ role: string; content: string }> {
+  return msgs
+    .filter((m) => !(m.role === "assistant" && !String(m.content || "").trim()))
+    .slice(-14)
+    .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
+}
+
+function buildInitialAssistantMessage(opts: {
+  dataSource: WorkspaceDataSource;
+  spend: WorkspaceDataset | null;
+  payroll: WorkspaceDataset | null;
+  scopeRange: { from?: string; to?: string };
+}): ChatMsg {
+  const id = genMsgId();
+  const spendAll = opts.spend?.kind === "spend" ? (opts.spend.rows as SpendTxn[]) : [];
+  const spendRows = spendRowsInScope(spendAll, opts.scopeRange);
+  const payrollRows = opts.payroll?.kind === "payroll" ? (opts.payroll.rows as PayrollRow[]) : [];
+  const hasRows = spendRows.length > 0 || payrollRows.length > 0;
+
+  if (opts.dataSource === "upload" && hasRows) {
+    const dr = spendDateRange(spendRows);
+    const rangeStr =
+      dr.from && dr.to ? `${dr.from} → ${dr.to}` : `${opts.scopeRange.from || "…"} → ${opts.scopeRange.to || "…"}`;
+    let totalSpend = 0;
+    for (const r of spendRows) {
+      if (r.amount > 0) totalSpend += r.amount;
+    }
+    const vendorSums = new Map<string, number>();
+    for (const r of spendRows) {
+      const v = (r.vendor || "").trim();
+      if (!v) continue;
+      vendorSums.set(v, (vendorSums.get(v) || 0) + (r.amount > 0 ? r.amount : 0));
+    }
+    let topVendor = "";
+    let topAmt = 0;
+    for (const [v, a] of vendorSums) {
+      if (a > topAmt) {
+        topAmt = a;
+        topVendor = v;
+      }
+    }
+    const rowCount = spendRows.length + payrollRows.length;
+    const facts: string[] = [];
+    if (totalSpend > 0) facts.push(`about **${money(totalSpend)}** in spend in this scope`);
+    if (topVendor) facts.push(`**${topVendor}** is the largest vendor so far (${money(topAmt)})`);
+    facts.push(`**${rowCount.toLocaleString()}** rows loaded · dates **${rangeStr}**`);
+    const lines = facts.slice(0, 3).map((f) => `• ${f}`);
+    return {
+      id,
+      role: "assistant",
+      content: `Your data is loaded. Here's what I can see:\n${lines.join("\n")}\n\nWhat would you like to know?`,
+      assistantContextBadge: "upload",
+    };
+  }
+
+  return {
+    id,
+    role: "assistant",
+    content:
+      "Upload a CSV or Excel file and I'll give you specific answers about your business — top vendors, payroll health, anything unusual, and a monthly report. Drag a file here or use the paperclip below.",
+    followUps: ["What file formats work?", "What will you tell me?", "How does this work?"],
+    assistantContextBadge: "general",
+  };
+}
 
 type SessionPersist = {
   msgs: Omit<ChatMsg, "streaming" | "typing">[];
@@ -380,19 +499,6 @@ async function sleep(ms: number) {
   await new Promise((r) => window.setTimeout(r, ms));
 }
 
-function spendDateRange(rows: SpendTxn[] | null | undefined): { from: string | null; to: string | null } {
-  if (!rows?.length) return { from: null, to: null };
-  let from: string | null = null;
-  let to: string | null = null;
-  rows.forEach((r) => {
-    const d = (r.date || "").slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
-    if (!from || d < from) from = d;
-    if (!to || d > to) to = d;
-  });
-  return { from, to };
-}
-
 export function AiWorkspaceApp() {
   const router = useRouter();
   const pathname = usePathname();
@@ -416,16 +522,13 @@ export function AiWorkspaceApp() {
     [workspace.datasets, workspace.primaryEntity, workspace.revision, scope.entities, profile?.entities],
   );
   const rangeLabel = `${scope.range.from || "…"} → ${scope.range.to || "…"}`;
+  const spendRowsForStatus =
+    merged.spend?.kind === "spend" ? spendRowsInScope(merged.spend.rows as SpendTxn[], scope.range) : [];
+  const payrollRowsForStatus =
+    merged.payroll?.kind === "payroll" ? (merged.payroll.rows as PayrollRow[]) : [];
+  const totalRowsStatus = spendRowsForStatus.length + payrollRowsForStatus.length;
 
-  const [msgs, setMsgs] = React.useState<ChatMsg[]>([
-    {
-      id: genMsgId(),
-      role: "assistant",
-      content:
-        "Upload a CSV or Excel file and I'll give you specific answers based on your real data — top vendors, payroll ratios, anomalies, and more. You can drag a file anywhere onto this chat, or use the paperclip button below.",
-      followUps: ["How does this work?", "What file formats work?", "Show me an example"],
-    },
-  ]);
+  const [msgs, setMsgs] = React.useState<ChatMsg[]>([]);
   const [q, setQ] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [uploadBusy, setUploadBusy] = React.useState(false);
@@ -450,25 +553,37 @@ export function AiWorkspaceApp() {
     return t ? `workspace:${t}` : "default";
   }, [clientId]);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
+    if (!workspace.ready || !hydrated) return;
     try {
       const raw = window.localStorage.getItem(sessionKeyForClient(clientId));
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as SessionPersist;
-      if (Array.isArray(parsed.msgs) && parsed.msgs.length > 0) {
-        setMsgs(
-          parsed.msgs.map((m, i) => ({
-            ...m,
-            id: (m as { id?: string }).id ?? `legacy-${i}`,
-            streaming: false,
-            typing: false,
-          })),
-        );
+      if (raw) {
+        const parsed = JSON.parse(raw) as SessionPersist;
+        if (Array.isArray(parsed.msgs) && parsed.msgs.length > 0) {
+          setMsgs(
+            parsed.msgs.map((m, i) => ({
+              ...m,
+              id: (m as { id?: string }).id ?? `legacy-${i}`,
+              streaming: false,
+              typing: false,
+            })),
+          );
+          return;
+        }
       }
     } catch {
       /* ignore */
     }
-  }, [clientId]);
+    setMsgs([
+      buildInitialAssistantMessage({
+        dataSource: workspace.dataSource,
+        spend: workspace.spendForEntity,
+        payroll: workspace.payrollForEntity,
+        scopeRange: scope.range,
+      }),
+    ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time bootstrap per clientId; workspace/scope only on first ready
+  }, [workspace.ready, hydrated, clientId]);
 
   // Optional cloud thread hydrate. Keeps UI identical; falls back silently to localStorage.
   React.useEffect(() => {
@@ -782,6 +897,7 @@ export function AiWorkspaceApp() {
                       "Upload a dataset first — then use **Reports** in the product menu or ask me to export a named report (e.g. *owner monthly report PDF*).",
                     streaming: false,
                     typing: false,
+                    assistantContextBadge: "general" as const,
                   }
                 : m,
             );
@@ -804,7 +920,9 @@ export function AiWorkspaceApp() {
         await streamAssistantContent(assistantId, msg);
         setMsgs((prev) => {
           const next = prev.map((m) =>
-            m.id === assistantId ? { ...m, content: msg, streaming: false, typing: false } : m,
+            m.id === assistantId
+              ? { ...m, content: msg, streaming: false, typing: false, assistantContextBadge: "upload" as const }
+              : m,
           );
           persistSession(next);
           return next;
@@ -818,24 +936,61 @@ export function AiWorkspaceApp() {
       const payrollDs = datasetOverride?.payroll ?? merged.payroll;
       const entityForAi = datasetOverride ? entity : merged.scopeLabel;
 
+      const conversationForEngine = [
+        ...msgs
+          .filter((m) => !(m.role === "assistant" && !String(m.content || "").trim()))
+          .slice(-14)
+          .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) } as const)),
+        { role: "user" as const, content: trimmed },
+      ];
+      const messageIntent = detectMessageIntent(text.trim(), priorTurnsForIntent(msgs));
+
       if (!spendDs && !payrollDs && workspace.dataSource !== "demo") {
-        const content =
-          "I don't have any uploaded data to analyze yet. Upload a CSV or Excel file \nusing the dropzone above, and I'll give you specific answers based on your \nactual numbers — vendor breakdown, payroll ratios, anomalies, and more.";
+        const localRaw = answerFromDataset({
+          question: trimmed,
+          datasetSpend: null,
+          datasetPayroll: null,
+          profile,
+          entity: entityForAi,
+          range: scope.range,
+          uploadPilot: null,
+          conversationTurns: conversationForEngine,
+          messageIntent,
+        }) as LocalEngineAnswer;
+        const recentTurns = msgs.slice(-10).map((m) => ({ role: m.role, content: m.content.slice(0, 2000) }));
+        const wantsDeep = wantsDeepDetail(trimmed);
+        const local = finishCopilotMessage(localRaw, {
+          profile,
+          entity: entityForAi,
+          range: scope.range,
+          pageLabel: "AI Workspace",
+          pathname,
+          recentTurns: [...recentTurns, { role: "user" as const, content: trimmed }],
+          surface: "workspace",
+          wantsDeep,
+        });
+        await streamAssistantContent(assistantId, local.text);
         setMsgs((prev) => {
           const next = prev.map((m) =>
             m.id === assistantId
               ? {
                   ...m,
-                  content,
-                  followUps: ["Upload a file", "How does this work?", "What file formats work?"],
+                  content: local.text,
+                  detailText: local.detailText,
                   streaming: false,
                   typing: false,
+                  viz: local.viz || null,
+                  meta: local.meta || null,
+                  followUps: local.followUps,
+                  kpis: local.kpis,
+                  assistantContextBadge: "general" as const,
                 }
               : m,
           );
           persistSession(next);
           return next;
         });
+        void tryPersistCloudMessage({ role: "assistant", content: local.text, detailText: local.detailText, meta: local.meta || null });
         setQ("");
         requestAnimationFrame(() => textareaRef.current?.focus());
         return;
@@ -848,13 +1003,6 @@ export function AiWorkspaceApp() {
         spendDataset: spendDs,
         payrollDataset: payrollDs,
       });
-      const conversationForEngine = [
-        ...msgs
-          .filter((m) => !(m.role === "assistant" && !String(m.content || "").trim()))
-          .slice(-14)
-          .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) } as const)),
-        { role: "user" as const, content: trimmed },
-      ];
 
       // Phase 2: Code calculates, AI explains (tenant-scoped insights endpoints).
       // Only attempt this for analytics-like asks; fall back to local engine if unavailable.
@@ -870,7 +1018,9 @@ export function AiWorkspaceApp() {
             await streamAssistantContent(assistantId, insightText);
             setMsgs((prev) => {
               const next = prev.map((m) =>
-                m.id === assistantId ? { ...m, content: insightText, streaming: false, typing: false } : m,
+                m.id === assistantId
+                  ? { ...m, content: insightText, streaming: false, typing: false, assistantContextBadge: "upload" as const }
+                  : m,
               );
               persistSession(next);
               return next;
@@ -894,6 +1044,7 @@ export function AiWorkspaceApp() {
         range: scope.range,
         uploadPilot,
         conversationTurns: conversationForEngine,
+        messageIntent,
       }) as LocalEngineAnswer;
       const spendRows = spendDs?.kind === "spend" ? (spendDs.rows as SpendTxn[]) : undefined;
       const recentTurns = msgs.slice(-10).map((m) => ({ role: m.role, content: m.content.slice(0, 2000) }));
@@ -922,6 +1073,13 @@ export function AiWorkspaceApp() {
 
       await streamAssistantContent(assistantId, local.text);
 
+      const hasLocalRows = Boolean(
+        (spendDs?.kind === "spend" && (spendDs.rows as SpendTxn[]).length) ||
+          (payrollDs?.kind === "payroll" && (payrollDs.rows as PayrollRow[]).length),
+      );
+      const localContextBadge: ChatMsg["assistantContextBadge"] =
+        workspace.dataSource === "demo" && hasLocalRows ? "demo" : hasLocalRows ? "upload" : "general";
+
       setMsgs((prev) => {
         let briefAppend = "";
         if (nextBrief) {
@@ -943,6 +1101,7 @@ export function AiWorkspaceApp() {
                 meta: local.meta || null,
                 followUps: local.followUps,
                 kpis: local.kpis,
+                assistantContextBadge: localContextBadge,
               }
             : m,
         );
@@ -1106,11 +1265,12 @@ export function AiWorkspaceApp() {
 
   function clearChat() {
     setMsgs([
-      {
-        id: genMsgId(),
-        role: "assistant",
-        content: "Fresh thread — ask anything or attach **CSV / XLSX**.",
-      },
+      buildInitialAssistantMessage({
+        dataSource: workspace.dataSource,
+        spend: workspace.spendForEntity,
+        payroll: workspace.payrollForEntity,
+        scopeRange: scope.range,
+      }),
     ]);
     setPendingAttachments([]);
     try {
@@ -1159,48 +1319,58 @@ export function AiWorkspaceApp() {
         composerDrag && "ring-2 ring-primary/30 ring-offset-2 ring-offset-background",
       )}
     >
-      <header className="shrink-0 border-b border-border/55 bg-gradient-to-r from-[var(--spendda-navy)]/[0.08] to-transparent px-4 py-3 sm:px-5">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <header className="shrink-0 border-b border-border bg-card/80 px-8 py-3 backdrop-blur-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-semibold tracking-tight text-foreground sm:text-base">AI Workspace</h2>
-              <Badge variant="outline" className="font-normal text-[10px] sm:text-xs">
-                {workspace.dataSource === "upload" ? "Live data" : workspace.dataSource === "demo" ? "Demo" : "No upload"}
-              </Badge>
-            </div>
-            <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground sm:text-xs">
-              <span className="truncate" title={workspace.activeDatasetLabel || undefined}>
-                <span className="font-medium text-foreground/85">Data:</span>{" "}
-                {workspace.dataSource === "upload" && workspace.activeDatasetLabel
-                  ? `📊 ${workspace.activeDatasetLabel}`
-                  : workspace.dataSource === "demo"
-                    ? "🎭 Demo data — upload your file for real numbers"
-                    : "⚠️ No data — upload a CSV or Excel file to begin"}
-              </span>
-              <span className="hidden sm:inline">·</span>
-              <span className="truncate">
-                <span className="font-medium text-foreground/85">Scope:</span> {merged.scopeLabel}
-              </span>
-            </div>
+            <h2 className="text-[15px] font-medium tracking-tight text-foreground">AI workspace</h2>
+            <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">
+              Ask anything about your data — specific answers, not generic advice
+            </p>
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={clearChat}>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span
+              className={cn(
+                "inline-flex max-w-[min(100%,280px)] items-center rounded-full border px-3 py-1 text-xs font-medium",
+                workspace.dataSource === "upload" &&
+                  "border-emerald-500/35 bg-emerald-500/10 text-emerald-950 dark:text-emerald-50",
+                workspace.dataSource === "demo" && "border-sky-500/35 bg-sky-500/10 text-sky-950 dark:text-sky-50",
+                workspace.dataSource === "none" && "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-50",
+              )}
+              title={workspace.activeDatasetLabel || undefined}
+            >
+              <span className="truncate">
+                {workspace.dataSource === "upload" && workspace.activeDatasetLabel
+                  ? `✓ ${workspace.activeDatasetLabel} · ${totalRowsStatus.toLocaleString()} rows`
+                  : workspace.dataSource === "demo"
+                    ? "Demo data"
+                    : "⚠ No data — upload a file to begin"}
+              </span>
+            </span>
+            <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground" onClick={clearChat}>
               <Trash2 className="mr-1 h-3 w-3" />
               Clear
             </Button>
-            <Button type="button" variant="secondary" size="sm" className="h-8 text-xs" onClick={() => void exportSessionCsv()}>
-              <Download className="mr-1 h-3 w-3" />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs text-muted-foreground"
+              onClick={() => void exportSessionCsv()}
+            >
               CSV
             </Button>
-            <Button type="button" variant="secondary" size="sm" className="h-8 text-xs" onClick={() => void exportSessionPdf()}>
-              <Download className="mr-1 h-3 w-3" />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs text-muted-foreground"
+              onClick={() => void exportSessionPdf()}
+            >
               PDF
             </Button>
           </div>
         </div>
       </header>
-
-      <ExternalIntelligenceWorkspaceStrip />
 
       <div
         className="relative flex min-h-0 flex-1 flex-col"
@@ -1223,7 +1393,7 @@ export function AiWorkspaceApp() {
         {/* Messages — scrolls; composer stays pinned below */}
         <div
           ref={scrollRef}
-          className="ai-workspace-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 py-4 sm:px-5 sm:py-5"
+          className="ai-workspace-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-8 py-6"
         >
           {!hasDataset ? (
             <div className="mx-auto flex max-w-lg flex-col items-center gap-4 py-6 text-center">
@@ -1265,178 +1435,229 @@ export function AiWorkspaceApp() {
             </div>
           ) : null}
 
-          <div className="mx-auto flex w-full min-w-0 max-w-[min(100%,720px)] flex-col gap-4 pb-2 pt-0">
-            {msgs.map((m, i) => (
-              <div key={m.id} className={cn("flex w-full min-w-0", m.role === "user" ? "justify-end" : "justify-start")}>
-                <div
-                  className={cn(
-                    "group/msg relative min-w-0 max-w-[min(100%,680px)] overflow-x-auto rounded-2xl px-4 py-2.5 shadow-ds-xs sm:px-4 sm:py-3",
-                    m.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "border border-border/50 bg-muted/20 text-foreground shadow-[inset_3px_0_0_0_hsl(var(--primary)/0.35)] backdrop-blur-[2px] dark:bg-muted/15",
-                  )}
-                >
-                  {m.role === "assistant" && m.typing && !m.content ? (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <TypingDots />
-                      <span>Thinking</span>
-                    </div>
-                  ) : m.role === "assistant" ? (
-                    <div
-                      className={cn(
-                        "min-w-0 space-y-2 break-words",
-                        m.streaming && m.content.length === 0 && !m.typing && "opacity-70",
-                      )}
-                    >
-                      <WorkspaceMarkdown content={m.content || (m.streaming ? "…" : "")} />
-                    </div>
-                  ) : (
-                    <div className="min-w-0 max-w-full whitespace-pre-wrap break-words text-sm leading-relaxed">{m.content}</div>
-                  )}
-
-                  {m.role === "assistant" && m.kpis?.length && m.content ? (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      {m.kpis.map((k) => (
-                        <div
-                          key={k.label + k.value}
-                          className="rounded-xl border border-border/50 bg-background/40 px-2.5 py-2 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-                        >
-                          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{k.label}</div>
-                          <div className="mt-0.5 text-sm font-semibold tabular-nums tracking-tight">{k.value}</div>
-                          {k.hint ? <div className="mt-0.5 text-[10px] text-muted-foreground">{k.hint}</div> : null}
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  {m.role === "assistant" && m.viz?.type && m.content ? (
-                    <div className="mt-3 rounded-xl border border-border/50 bg-background/25 p-2">
-                      <div className="mb-1.5 px-1 text-[11px] font-semibold text-muted-foreground">{m.viz.title}</div>
-                      <div className="h-[160px] w-full min-w-0 sm:h-[180px]">
-                        {m.viz.type === "bar" ? (
-                          <SpenddaResponsiveContainer width="100%" height="100%">
-                            <BarChart data={m.viz.data as { name?: string; value?: number }[]} margin={{ left: 4, right: 4 }}>
-                              <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                              <XAxis dataKey="name" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                              <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                              <Tooltip formatter={(v) => `$${Number(v).toLocaleString()}`} />
-                              <Bar dataKey="value" fill="hsl(var(--primary))" radius={[8, 8, 0, 0]} />
-                            </BarChart>
-                          </SpenddaResponsiveContainer>
-                        ) : (
-                          <SpenddaResponsiveContainer width="100%" height="100%">
-                            <LineChart data={m.viz.data as { x?: string; y?: number }[]} margin={{ left: 4, right: 4 }}>
-                              <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                              <XAxis dataKey="x" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                              <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                              <Tooltip formatter={(v) => `$${Number(v).toLocaleString()}`} />
-                              <Line type="monotone" dataKey="y" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-                            </LineChart>
-                          </SpenddaResponsiveContainer>
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {m.role === "assistant" && m.detailText && m.content && !m.streaming ? (
-                    <details className="mt-2 rounded-xl border border-border/50 bg-background/20 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary::-webkit-details-marker]:hidden">
-                      <summary className="px-2.5 py-2 text-xs font-medium text-foreground/90 transition hover:bg-muted/30">
-                        See details
-                      </summary>
-                      <div className="max-h-[min(50vh,28rem)] overflow-y-auto overflow-x-auto border-t border-border/40 px-2 py-2">
-                        <WorkspaceMarkdown content={m.detailText} />
-                      </div>
-                    </details>
-                  ) : null}
-
-                  {m.role === "assistant" && m.followUps?.length && m.content ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {m.followUps.map((f) => (
-                        <button
-                          key={f}
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void runQuery(f)}
-                          className="rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-left text-xs font-medium text-foreground/90 shadow-ds-xs transition hover:border-primary/30 hover:bg-muted/50 disabled:opacity-50"
-                        >
-                          {f}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  {m.role === "assistant" && m.content && !m.streaming && (m.meta?.sources || m.meta?.trustNote) ? (
-                    <details className="mt-2 rounded-lg border border-border/40 bg-muted/10 text-muted-foreground [&_summary]:cursor-pointer [&_summary]:list-none [&_summary::-webkit-details-marker]:hidden">
-                      <summary className="px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/90">
-                        Context &amp; sources
-                      </summary>
-                      <div className="max-h-[min(40vh,20rem)] space-y-2 overflow-y-auto border-t border-border/30 px-2.5 py-2 text-[11px] leading-relaxed">
-                        {m.meta?.confidencePct !== undefined && m.meta.confidencePct > 0 ? (
-                          <div>
-                            <span className="font-medium text-foreground/80">Confidence · </span>
-                            {Math.round(m.meta.confidencePct)}%
-                          </div>
-                        ) : null}
-                        {m.meta?.trustNote ? (
-                          <div>
-                            <span className="font-medium text-foreground/80">Scope · </span>
-                            <WorkspaceMarkdown content={m.meta.trustNote} />
-                          </div>
-                        ) : null}
-                        {m.meta?.sources?.spend ? (
-                          <div>
-                            Spend file · {m.meta.sources.spend.rows.toLocaleString()} rows ({m.meta.sources.spend.filename})
-                          </div>
-                        ) : null}
-                        {m.meta?.sources?.payroll ? (
-                          <div>
-                            Payroll file · {m.meta.sources.payroll.rows.toLocaleString()} rows ({m.meta.sources.payroll.filename})
-                          </div>
-                        ) : null}
-                        {m.meta?.dataGaps?.length ? (
-                          <div className="text-amber-900/90 dark:text-amber-200/90">
-                            <span className="font-medium">Data gaps · </span>
-                            {m.meta.dataGaps.join(" · ")}
-                          </div>
-                        ) : null}
-                      </div>
-                    </details>
-                  ) : null}
-
-                  {m.role === "assistant" && m.content && !m.streaming ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/40 pt-2.5">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground"
-                        onClick={() =>
-                          void copyMessage(`${m.content}${m.detailText ? `\n\n---\n\n${m.detailText}` : ""}`)
-                        }
-                      >
-                        <Copy className="mr-1.5 h-3.5 w-3.5" />
-                        Copy
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground"
-                        disabled={busy}
-                        onClick={() => retryFromAssistantIndex(i)}
-                      >
-                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                        Retry
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
+          <div className="mx-auto flex w-full min-w-0 flex-col gap-5 pb-2 pt-0">
+            {msgs.length > 0 ? (
+              <div className="flex justify-center py-1">
+                <span className="rounded-full bg-muted/70 px-3 py-0.5 text-[11px] text-muted-foreground">Today</span>
               </div>
-            ))}
+            ) : null}
+            {msgs.map((m, i) =>
+              m.role === "assistant" ? (
+                <div key={m.id} className="flex w-full min-w-0 justify-start gap-2">
+                  <div
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary"
+                    aria-hidden
+                  >
+                    S
+                  </div>
+                  <div className="flex min-w-0 max-w-[72%] flex-col gap-1.5">
+                    <div className="group/msg relative overflow-x-auto rounded-[12px] rounded-tl-[3px] border-[0.5px] border-border bg-card px-3.5 py-2.5 text-sm text-foreground shadow-sm">
+                      {m.typing && !m.content ? (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <TypingDots />
+                          <span>Thinking</span>
+                        </div>
+                      ) : (
+                        <div
+                          className={cn(
+                            "min-w-0 space-y-3 break-words",
+                            m.streaming && m.content.length === 0 && !m.typing && "opacity-70",
+                          )}
+                        >
+                          {m.kpis?.length && m.content ? (
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                              {m.kpis.slice(0, 3).map((k) => (
+                                <div
+                                  key={k.label + k.value}
+                                  className="rounded-lg border border-border bg-muted/50 px-2.5 py-2 text-left"
+                                >
+                                  <div className="text-[10px] font-medium text-muted-foreground">{k.label}</div>
+                                  <div className="mt-0.5 text-base font-medium tabular-nums tracking-tight text-foreground">
+                                    {k.value}
+                                  </div>
+                                  {k.hint ? (
+                                    <div className={cn("mt-0.5 text-[10px] leading-snug", kpiHintTrendClass(k.hint))}>
+                                      {k.hint}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                          <div className="text-sm leading-relaxed">
+                            <WorkspaceMarkdown content={m.content || (m.streaming ? "…" : "")} />
+                          </div>
+                          {m.viz?.type && m.content ? (
+                            <div className="mt-3 rounded-lg border border-border bg-muted/30 p-2">
+                              <div className="mb-1.5 px-1 text-[11px] font-semibold text-muted-foreground">{m.viz.title}</div>
+                              <div className="h-[160px] w-full min-w-0 sm:h-[180px]">
+                                {m.viz.type === "bar" ? (
+                                  <SpenddaResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={m.viz.data as { name?: string; value?: number }[]} margin={{ left: 4, right: 4 }}>
+                                      <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                                      <XAxis dataKey="name" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                                      <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                                      <Tooltip formatter={(v) => `$${Number(v).toLocaleString()}`} />
+                                      <Bar dataKey="value" fill="hsl(var(--primary))" radius={[8, 8, 0, 0]} />
+                                    </BarChart>
+                                  </SpenddaResponsiveContainer>
+                                ) : (
+                                  <SpenddaResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={m.viz.data as { x?: string; y?: number }[]} margin={{ left: 4, right: 4 }}>
+                                      <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                                      <XAxis dataKey="x" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                                      <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                                      <Tooltip formatter={(v) => `$${Number(v).toLocaleString()}`} />
+                                      <Line type="monotone" dataKey="y" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                                    </LineChart>
+                                  </SpenddaResponsiveContainer>
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {m.detailText && m.content && !m.streaming ? (
+                            <details className="mt-2 rounded-lg border border-border bg-muted/20 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary::-webkit-details-marker]:hidden">
+                              <summary className="px-2.5 py-2 text-xs font-medium text-foreground/90 transition hover:bg-muted/30">
+                                See details
+                              </summary>
+                              <div className="max-h-[min(50vh,28rem)] overflow-y-auto overflow-x-auto border-t border-border px-2 py-2">
+                                <WorkspaceMarkdown content={m.detailText} />
+                              </div>
+                            </details>
+                          ) : null}
+
+                          {m.content && !m.streaming && (m.meta?.sources || m.meta?.trustNote) ? (
+                            <details className="mt-2 rounded-lg border border-border bg-muted/20 text-muted-foreground [&_summary]:cursor-pointer [&_summary]:list-none [&_summary::-webkit-details-marker]:hidden">
+                              <summary className="px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/90">
+                                Context &amp; sources
+                              </summary>
+                              <div className="max-h-[min(40vh,20rem)] space-y-2 overflow-y-auto border-t border-border px-2.5 py-2 text-[11px] leading-relaxed">
+                                {m.meta?.confidencePct !== undefined && m.meta.confidencePct > 0 ? (
+                                  <div>
+                                    <span className="font-medium text-foreground/80">Confidence · </span>
+                                    {Math.round(m.meta.confidencePct)}%
+                                  </div>
+                                ) : null}
+                                {m.meta?.trustNote ? (
+                                  <div>
+                                    <span className="font-medium text-foreground/80">Scope · </span>
+                                    <WorkspaceMarkdown content={m.meta.trustNote} />
+                                  </div>
+                                ) : null}
+                                {m.meta?.sources?.spend ? (
+                                  <div>
+                                    Spend file · {m.meta.sources.spend.rows.toLocaleString()} rows ({m.meta.sources.spend.filename})
+                                  </div>
+                                ) : null}
+                                {m.meta?.sources?.payroll ? (
+                                  <div>
+                                    Payroll file · {m.meta.sources.payroll.rows.toLocaleString()} rows (
+                                    {m.meta.sources.payroll.filename})
+                                  </div>
+                                ) : null}
+                                {m.meta?.dataGaps?.length ? (
+                                  <div className="text-amber-900/90 dark:text-amber-200/90">
+                                    <span className="font-medium">Data gaps · </span>
+                                    {m.meta.dataGaps.join(" · ")}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </details>
+                          ) : null}
+
+                          {m.content && !m.streaming ? (
+                            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-2.5">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() =>
+                                  void copyMessage(`${m.content}${m.detailText ? `\n\n---\n\n${m.detailText}` : ""}`)
+                                }
+                              >
+                                <Copy className="mr-1.5 h-3.5 w-3.5" />
+                                Copy
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                                disabled={busy}
+                                onClick={() => retryFromAssistantIndex(i)}
+                              >
+                                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                                Retry
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+
+                    {m.assistantContextBadge && !m.streaming && m.content ? (
+                      <span
+                        className={cn(
+                          "inline-flex max-w-full rounded-full px-2 py-0.5 text-[10px] font-medium leading-snug",
+                          m.assistantContextBadge === "upload" &&
+                            "bg-emerald-500/12 text-emerald-900 dark:text-emerald-100/90",
+                          m.assistantContextBadge === "demo" && "bg-sky-500/12 text-sky-900 dark:text-sky-100/90",
+                          m.assistantContextBadge === "general" && "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {m.assistantContextBadge === "upload"
+                          ? "Based on your uploaded data"
+                          : m.assistantContextBadge === "demo"
+                            ? "Demo data"
+                            : "Conversation · not a data query"}
+                      </span>
+                    ) : null}
+
+                    {m.followUps?.length && m.content && !m.streaming ? (
+                      <div className="flex flex-wrap gap-1.5 pl-0.5">
+                        {m.followUps.map((f) => (
+                          <button
+                            key={f}
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void runQuery(f)}
+                            className="rounded-full border border-border bg-transparent px-2.5 py-1 text-left text-[11px] font-medium text-foreground/90 transition hover:bg-muted/60 disabled:opacity-50"
+                          >
+                            {f}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <div key={m.id} className="flex w-full min-w-0 justify-end gap-2">
+                  <div className="flex min-w-0 max-w-[72%] flex-col items-end gap-1">
+                    <div className="rounded-[12px] rounded-tr-[3px] bg-secondary px-3.5 py-2.5 text-sm leading-relaxed text-secondary-foreground">
+                      <div className="min-w-0 whitespace-pre-wrap break-words">{m.content}</div>
+                    </div>
+                  </div>
+                  <div
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground"
+                    aria-hidden
+                  >
+                    {userBubbleInitials(profile)}
+                  </div>
+                </div>
+              ),
+            )}
             {busy && msgs.at(-1)?.role !== "assistant" ? (
-              <div className="flex justify-start">
-                <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              <div className="flex w-full min-w-0 justify-start gap-2">
+                <div
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary"
+                  aria-hidden
+                >
+                  S
+                </div>
+                <div className="flex min-w-0 max-w-[72%] items-center gap-2 rounded-[12px] rounded-tl-[3px] border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
                   Working…
                 </div>
               </div>
@@ -1447,7 +1668,7 @@ export function AiWorkspaceApp() {
         {/* Composer — fixed to bottom of workspace panel (flex sibling of scroll region) */}
         <div
           className={cn(
-            "z-10 shrink-0 border-t border-border/55 bg-background/95 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_32px_-8px_hsl(var(--foreground)/0.06)] backdrop-blur-md dark:bg-background/92 dark:shadow-[0_-8px_36px_-10px_rgba(0,0,0,0.45)]",
+            "z-10 shrink-0 border-t border-border bg-background/95 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_32px_-8px_hsl(var(--foreground)/0.06)] backdrop-blur-md dark:bg-background/92 dark:shadow-[0_-8px_36px_-10px_rgba(0,0,0,0.45)]",
           )}
           onDragOver={(e) => {
             e.preventDefault();
@@ -1465,46 +1686,44 @@ export function AiWorkspaceApp() {
             if (e.dataTransfer.files?.length) addPendingFiles(e.dataTransfer.files);
           }}
         >
-          <div className="mx-auto w-full max-w-[min(100%,720px)] px-3 sm:px-5">
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Suggestions</p>
-            <div className="-mx-0.5 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
-              {getSuggestedQuestions(profile?.orgType).map((p) => (
+          <div className="mx-auto w-full px-8">
+            <p className="mb-1.5 text-[10px] text-muted-foreground">Try asking:</p>
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {getWorkspaceSuggestionChips(hasDataset, profile?.orgType).map((p) => (
                 <button
                   key={p}
                   type="button"
                   disabled={busy}
                   onClick={() => void runQuery(p)}
-                  className="shrink-0 rounded-full border border-border/55 bg-muted/25 px-3.5 py-1.5 text-left text-xs font-medium text-muted-foreground transition hover:border-primary/28 hover:bg-muted/45 hover:text-foreground disabled:opacity-50"
+                  className="shrink-0 rounded-full border border-border bg-transparent px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition hover:bg-muted/60 hover:text-foreground disabled:opacity-50"
                 >
                   {p}
                 </button>
               ))}
             </div>
-          </div>
 
-          {pendingAttachments.length ? (
-            <div className="mx-auto mb-2 flex w-full max-w-[min(100%,720px)] flex-wrap gap-2 px-3 sm:px-5">
-              {pendingAttachments.map((f, idx) => (
-                <span
-                  key={`${f.name}-${idx}`}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/25 py-1 pl-2.5 pr-1 text-[11px] text-foreground"
-                >
-                  <FileSpreadsheet className="h-3 w-3 text-primary" />
-                  <span className="max-w-[140px] truncate">{f.name}</span>
-                  <button
-                    type="button"
-                    className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label={`Remove ${f.name}`}
-                    onClick={() => setPendingAttachments((prev) => prev.filter((_, j) => j !== idx))}
+            {pendingAttachments.length ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {pendingAttachments.map((f, idx) => (
+                  <span
+                    key={`${f.name}-${idx}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 py-1 pl-2.5 pr-1 text-[11px] text-foreground"
                   >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : null}
+                    <FileSpreadsheet className="h-3 w-3 text-primary" />
+                    <span className="max-w-[160px] truncate">{f.name}</span>
+                    <button
+                      type="button"
+                      className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label={`Remove ${f.name}`}
+                      onClick={() => setPendingAttachments((prev) => prev.filter((_, j) => j !== idx))}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
 
-          <div className="mx-auto flex w-full max-w-[min(100%,720px)] items-end gap-2 px-3 sm:px-5">
             <input
               ref={fileInputRef}
               type="file"
@@ -1517,49 +1736,45 @@ export function AiWorkspaceApp() {
                 if (fl?.length) addPendingFiles(fl);
               }}
             />
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-10 w-10 shrink-0 rounded-xl"
-              disabled={uploadBusy || busy}
-              onClick={() => fileInputRef.current?.click()}
-              aria-label="Attach files"
-            >
-              <Paperclip className="h-4 w-4" />
-            </Button>
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={
-                hasDataset
-                  ? "Ask about spend, payroll, vendors, risks… (Shift+Enter for new line)"
-                  : "Ask a question, or attach CSV / Excel below…"
-              }
-              className="max-h-[200px] min-h-[44px] flex-1 resize-none rounded-xl border border-input bg-background/90 px-3 py-2.5 text-sm shadow-ds-xs outline-none transition-[border-color,box-shadow] duration-200 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void sendComposer();
-                }
-              }}
-            />
-            <Button
-              type="button"
-              size="icon"
-              className="h-10 w-10 shrink-0 rounded-xl bg-gradient-to-br from-primary to-blue-600 text-primary-foreground shadow-md"
-              disabled={busy || (!q.trim() && !pendingAttachments.length)}
-              onClick={() => void sendComposer()}
-              aria-label="Send"
-            >
-              {busy || uploadBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
-          </div>
-          <div className="mx-auto mt-1.5 flex w-full max-w-[min(100%,720px)] items-center gap-1.5 px-3 pb-1 text-[10px] leading-snug text-muted-foreground sm:px-5 sm:text-[11px]">
-            <FileSpreadsheet className="h-3 w-3 shrink-0 text-primary/70" aria-hidden />
-            <span>Drop files on the chat or here — the paperclip queues files for your next send.</span>
+            <div className="mt-3 flex items-end gap-2 rounded-lg border border-border bg-muted/50 p-2">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Ask a question or attach a file…"
+                className="max-h-[200px] min-h-[40px] w-0 min-w-0 flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm text-foreground outline-none ring-0 placeholder:text-muted-foreground focus-visible:ring-0"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void sendComposer();
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                disabled={uploadBusy || busy}
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Attach files"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                className="h-9 w-9 shrink-0 rounded-md bg-foreground text-background hover:bg-foreground/90"
+                disabled={busy || (!q.trim() && !pendingAttachments.length)}
+                onClick={() => void sendComposer()}
+                aria-label="Send"
+              >
+                {busy || uploadBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </Button>
+            </div>
+
+            <p className="mt-2 text-center text-[10px] text-muted-foreground">Drop CSV or Excel files anywhere on this page</p>
           </div>
         </div>
       </div>

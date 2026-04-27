@@ -109,6 +109,21 @@ type MlSummaryResponse = {
   };
 };
 
+function dashboardEyebrow(orgType?: string) {
+  switch (orgType) {
+    case "Home Care Agency":
+      return "Care operations";
+    case "Childcare Center":
+      return "Center operations";
+    case "Restaurant Group":
+      return "Location performance";
+    case "SME":
+      return "Business overview";
+    default:
+      return "Finance operations";
+  }
+}
+
 function kpiFormat(value: number, currency: string) {
   return formatMoney(value, currency);
 }
@@ -243,7 +258,7 @@ export default function DashboardPage() {
   const [mounted, setMounted] = React.useState(false);
   const [welcomeHeadline, setWelcomeHeadline] = React.useState<string | null>(null);
   const [uploaded, setUploaded] = React.useState<UploadedInsights[]>([]);
-  const [viewPreset, setViewPreset] = React.useState<"Auto" | "Finance Lead" | "Auditor" | "Minister / Executive">("Auto");
+  const [viewPreset, setViewPreset] = React.useState<"Auto" | "Finance Lead" | "Auditor" | "Executive">("Auto");
   const [insightsAlerts, setInsightsAlerts] = React.useState<InsightsAlertSnapshot | null>(null);
 
   const entity = workspace.ready ? workspace.primaryEntity : profile?.activeEntity || "HQ";
@@ -498,7 +513,7 @@ export default function DashboardPage() {
     const r = profile?.role;
     if (r === "Finance Lead") return "Finance Lead";
     if (r === "Auditor") return "Auditor";
-    if (r === "Executive") return "Minister / Executive";
+    if (r === "Executive") return "Executive";
     return "Finance Lead";
   }, [profile?.role, viewPreset]);
 
@@ -514,14 +529,28 @@ export default function DashboardPage() {
       const payDir = kpiTrends.payroll <= 0 ? "dipped" : "ticked up";
       const queue =
         investigationStats.active > 8
-          ? "Review queue is active — triage owners in Investigations."
+          ? "Review queue is active — triage items in Alerts."
           : investigationStats.active > 0
-            ? `${investigationStats.active} new flags opened — none blocking.`
+            ? `${investigationStats.active} new flags — none blocking.`
             : "No open flags in this window — posture is stable.";
-      return `Spend ${spendDir}; payroll ${payDir} with period closeout. ${queue}`;
+      const orgNarrative = () => {
+        switch (profile?.orgType) {
+          case "Home Care Agency":
+            return `Caregiver pay ${payDir} this period. ${queue}`;
+          case "Childcare Center":
+            return `Staff costs ${payDir} vs prior period. ${queue}`;
+          case "Restaurant Group":
+            return `Revenue and labor tracked across locations. ${queue}`;
+          case "SME":
+            return `Spend ${spendDir}; payroll ${payDir} this period. ${queue}`;
+          default:
+            return `Spend ${spendDir}; payroll ${payDir} with period closeout. ${queue}`;
+        }
+      };
+      return orgNarrative();
     }
     return "Connect uploads to unlock scoped totals. Demo signals preview the storyline your team exports to the board.";
-  }, [investigationStats.active, kEffective, kpiTrends.payroll, kpiTrends.spend]);
+  }, [investigationStats.active, kEffective, kpiTrends.payroll, kpiTrends.spend, profile?.orgType]);
 
   const [trendPreset, setTrendPreset] = React.useState<ChartRangePreset>("30d");
   const chartFillId = React.useId().replace(/:/g, "");
@@ -712,23 +741,42 @@ export default function DashboardPage() {
       icon: "wallet" as KpiIconName,
     };
     const spendTile: KpiTile = {
-      label: uploadMetrics ? "Total spend (scoped)" : "Total spend",
+      label: (() => {
+        if (profile?.orgType === "Restaurant Group")
+          return uploadMetrics ? "Total revenue (scoped)" : "Total revenue";
+        if (profile?.orgType === "Home Care Agency") return "Total operating cost";
+        if (profile?.orgType === "Childcare Center") return "Total operating cost";
+        return uploadMetrics ? "Total spend (scoped)" : "Total spend";
+      })(),
       value: kEffective ? kpiFormat(kEffective.totalSpend30d, currency) : "—",
       hint: uploadMetrics ? "From uploaded rows in date range" : "30-day rolling",
       trend: kpiTrends.spend,
       icon: "wallet" as KpiIconName,
     };
     const payrollTile: KpiTile = {
-      label: "Payroll",
+      label: (() => {
+        if (profile?.orgType === "Home Care Agency") return "Caregiver pay";
+        if (profile?.orgType === "Childcare Center") return "Staff payroll";
+        if (profile?.orgType === "Restaurant Group") return "Labor cost";
+        return "Payroll";
+      })(),
       value: kEffective ? kpiFormat(kEffective.payrollMonthly, currency) : "—",
       hint: "This period",
       trend: kpiTrends.payroll,
       icon: "users" as KpiIconName,
     };
     const healthTile: KpiTile = {
-      label: "Portfolio health",
+      label:
+        profile?.orgType &&
+        ["Home Care Agency", "Childcare Center", "Restaurant Group", "SME"].includes(profile.orgType)
+          ? "Business health"
+          : "Portfolio health",
       value: healthScore == null ? "—" : `${healthScore}/100`,
-      hint: "Risk + exceptions composite",
+      hint:
+        profile?.orgType &&
+        ["Home Care Agency", "Childcare Center", "Restaurant Group", "SME"].includes(profile.orgType)
+          ? "Flags + spend + payroll composite"
+          : "Risk + exceptions composite",
       trend: healthScore != null && healthScore >= 72 ? 1.2 : -2.4,
       icon: "activity" as KpiIconName,
     };
@@ -747,7 +795,7 @@ export default function DashboardPage() {
       icon: "shield" as KpiIconName,
     };
     if (effectiveView === "Auditor") return [investigations, vendorTile, healthTile, exposureTile];
-    if (effectiveView === "Minister / Executive")
+    if (effectiveView === "Executive")
       return [healthTile, exposureTile, spendTile, investigations, payrollTile];
     return [spendTile, payrollTile, dataHealthTile, investigations];
   }, [
@@ -771,6 +819,7 @@ export default function DashboardPage() {
     payrollStability,
     vendorDependency.score,
     vendorDependency.top3Conc,
+    profile?.orgType,
   ]);
 
   const trendEyebrow = React.useMemo(() => {
@@ -836,9 +885,18 @@ export default function DashboardPage() {
                 ) : null}
               </div>
               <div className="relative mt-1 font-mono text-[1.65rem] font-semibold tabular-nums tracking-tight text-foreground sm:text-[1.85rem]">
-                {(x.label === "Total spend" || x.label === "Total spend (scoped)") && kEffective ? (
+                {(x.label === "Total spend" ||
+                  x.label === "Total spend (scoped)" ||
+                  x.label === "Total revenue" ||
+                  x.label === "Total revenue (scoped)" ||
+                  x.label === "Total operating cost") &&
+                kEffective ? (
                   <AnimatedMoney value={kEffective.totalSpend30d} currency={currency} />
-                ) : x.label === "Payroll" && kEffective ? (
+                ) : (x.label === "Payroll" ||
+                  x.label === "Caregiver pay" ||
+                  x.label === "Staff payroll" ||
+                  x.label === "Labor cost") &&
+                kEffective ? (
                   <AnimatedMoney value={kEffective.payrollMonthly} currency={currency} />
                 ) : (
                   x.value
@@ -876,7 +934,15 @@ export default function DashboardPage() {
               ? "Staffing, supplier spend, and budget pressure summary."
               : profile?.orgType === "Bank"
                 ? "Branch cost and compliance anomaly summary."
-                : "Spend + workforce intelligence summary.";
+                : profile?.orgType === "Home Care Agency"
+                  ? "Caregiver costs, client billing, and cash runway summary."
+                  : profile?.orgType === "Childcare Center"
+                    ? "Staff costs, subsidy billing, and center performance summary."
+                    : profile?.orgType === "Restaurant Group"
+                      ? "Revenue, labor cost, and location performance summary."
+                      : profile?.orgType === "SME"
+                        ? "Vendor spend, payroll health, and monthly clarity summary."
+                        : "Spend + workforce intelligence summary.";
 
     const bullets: string[] = [];
     if (kEffective) {
@@ -915,7 +981,15 @@ export default function DashboardPage() {
               ? "Overtime pressure projected for Nursing in 3 weeks."
               : profile?.orgType === "Bank"
                 ? "Branch concentration risk increased in procurement."
-                : "Vendor concentration and repeated-payment signals elevated.";
+                : profile?.orgType === "Home Care Agency"
+                  ? "Caregiver overtime elevated — evening shift costs above target."
+                  : profile?.orgType === "Childcare Center"
+                    ? "Staff cost per child above benchmark at one or more centers."
+                    : profile?.orgType === "Restaurant Group"
+                      ? "One location underperforming vs group average by 20%+."
+                      : profile?.orgType === "SME"
+                        ? "Vendor concentration and duplicate payment signals elevated."
+                        : "Vendor concentration and repeated-payment signals elevated.";
 
     const exposureNarrative = uploadMetrics
       ? `Upload-derived exposure: ${formatMoney(uploadMetrics.kpis.savingsOpportunity30d, currency)} tied to duplicate / repeated / large-line flags in your file.`
@@ -1003,6 +1077,54 @@ export default function DashboardPage() {
     if (profile?.orgType === "NGO") base[0] = { tone: "warning", title: "Program spend variance", detail: "Program lines trending above donor-approved envelopes. Review allocations." };
     if (profile?.orgType === "Private Company") base[0] = { tone: "warning", title: "Cost center drift", detail: "Indirect spend rising faster than revenue units. Review cost centers and approvals." };
     if (profile?.orgType === "Hospital") base[2] = { tone: "primary", title: "Staffing projection", detail: "Payroll projection suggests overtime rise in Nursing." };
+    if (profile?.orgType === "Home Care Agency") {
+      base[0] = {
+        tone: "warning",
+        title: "Payroll above target",
+        detail: "Caregiver pay is running above your 60% of revenue target. Review overtime and scheduling.",
+      };
+      base[2] = {
+        tone: "primary",
+        title: "Overdue client invoices",
+        detail: "Check for unpaid client billing — delays affect cash runway and payroll coverage.",
+      };
+    }
+    if (profile?.orgType === "Childcare Center") {
+      base[0] = {
+        tone: "warning",
+        title: "Staff cost variance",
+        detail: "Staff cost per enrolled child is above benchmark at one or more centers.",
+      };
+      base[2] = {
+        tone: "primary",
+        title: "Subsidy payment check",
+        detail: "Verify state subsidy payments are on track — delays impact operating cash.",
+      };
+    }
+    if (profile?.orgType === "Restaurant Group") {
+      base[0] = {
+        tone: "warning",
+        title: "Location gap",
+        detail: "One location is underperforming vs the group average. Review labor cost and revenue.",
+      };
+      base[2] = {
+        tone: "primary",
+        title: "Labor cost %",
+        detail: "Labor as % of revenue is above the 30% benchmark at one or more locations.",
+      };
+    }
+    if (profile?.orgType === "SME") {
+      base[0] = {
+        tone: "warning",
+        title: "Vendor concentration",
+        detail: "Top 3 vendors represent over 60% of spend. Review for over-dependence.",
+      };
+      base[2] = {
+        tone: "primary",
+        title: "Payroll trend",
+        detail: "Payroll is trending up vs the same period last year. Check if revenue is keeping pace.",
+      };
+    }
     return base;
   }, [profile?.orgType, uploadMetrics, currency]);
 
@@ -1010,6 +1132,64 @@ export default function DashboardPage() {
     const goals = profile?.primaryGoals || [];
     const mode = profile?.dataMode || "demo";
     const items: Array<{ title: string; detail: string; href: string; icon: React.ReactNode; tone?: "default" | "secondary" | "outline" }> = [];
+
+    if (profile?.orgType === "Home Care Agency") {
+      items.push({
+        title: "Review caregiver overtime",
+        detail: "Check evening and weekend overtime patterns — target payroll under 60% of revenue.",
+        href: "/app/payroll",
+        icon: <Users className="h-4 w-4" />,
+        tone: "default",
+      });
+      items.push({
+        title: "Chase overdue invoices",
+        detail: "Client billing gaps affect cash runway and payroll coverage.",
+        href: "/app/ai-workspace",
+        icon: <Wallet className="h-4 w-4" />,
+        tone: "secondary",
+      });
+    }
+    if (profile?.orgType === "Childcare Center") {
+      items.push({
+        title: "Review cost per child",
+        detail: "Compare staff cost per enrolled child across your centers.",
+        href: "/app/payroll",
+        icon: <Users className="h-4 w-4" />,
+        tone: "default",
+      });
+      items.push({
+        title: "Check subsidy payments",
+        detail: "Verify state subsidy payments are received and reconciled.",
+        href: "/app/ai-workspace",
+        icon: <Wallet className="h-4 w-4" />,
+        tone: "secondary",
+      });
+    }
+    if (profile?.orgType === "Restaurant Group") {
+      items.push({
+        title: "Compare location performance",
+        detail: "See which location is underperforming and review labor cost %.",
+        href: "/app/departments",
+        icon: <Activity className="h-4 w-4" />,
+        tone: "default",
+      });
+      items.push({
+        title: "Review vendor invoices",
+        detail: "Check for duplicate food supplier invoices and price drift.",
+        href: "/app/alerts",
+        icon: <AlertTriangle className="h-4 w-4" />,
+        tone: "secondary",
+      });
+    }
+    if (profile?.orgType === "SME") {
+      items.push({
+        title: "Review top vendors",
+        detail: "Your top 3 vendors represent a large share of spend — check contracts.",
+        href: "/app/spend-analytics",
+        icon: <Wallet className="h-4 w-4" />,
+        tone: "default",
+      });
+    }
 
     if (mode === "upload" && !hasUploads) {
       items.push({
@@ -1052,14 +1232,14 @@ export default function DashboardPage() {
     }
 
     return items.slice(0, 4);
-  }, [hasUploads, profile?.dataMode, profile?.primaryGoals]);
+  }, [hasUploads, profile?.dataMode, profile?.orgType, profile?.primaryGoals]);
 
   return (
     <div className="app-grid-stack app-stagger">
       <div className="ds-finance-hero">
         <div className="min-w-0 flex-1">
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
-            Finance operations
+            {dashboardEyebrow(profile?.orgType)}
           </div>
           <h1 className="mt-1.5 font-heading text-xl font-semibold leading-snug tracking-tight text-foreground sm:mt-2 sm:text-2xl sm:leading-tight">
             {welcomeHeadline ?? "Welcome back — here's your latest update."}
@@ -1324,7 +1504,26 @@ export default function DashboardPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="ds-card p-5 lg:col-span-1">
-          <DsSectionHeader eyebrow="Departments" title="Spend by department" />
+          <DsSectionHeader
+            eyebrow={
+              profile?.orgType === "Restaurant Group"
+                ? "Locations"
+                : profile?.orgType === "Home Care Agency"
+                  ? "Service lines"
+                  : profile?.orgType === "Childcare Center"
+                    ? "Centers"
+                    : "Departments"
+            }
+            title={
+              profile?.orgType === "Restaurant Group"
+                ? "Revenue by location"
+                : profile?.orgType === "Home Care Agency"
+                  ? "Cost by service line"
+                  : profile?.orgType === "Childcare Center"
+                    ? "Cost by center"
+                    : "Spend by department"
+            }
+          />
           <div className="mt-4 min-h-[200px] w-full min-w-0">
             {chartDeptSpend.length === 0 ? (
               <div className="grid gap-2">
@@ -1467,7 +1666,7 @@ export default function DashboardPage() {
             <Select
               value={viewPreset}
               onValueChange={(v) =>
-                v && setViewPreset(v as "Auto" | "Finance Lead" | "Auditor" | "Minister / Executive")
+                v && setViewPreset(v as "Auto" | "Finance Lead" | "Auditor" | "Executive")
               }
             >
               <SelectTrigger className="h-9 border-[var(--brand-primary)]/25 bg-background/80">
@@ -1477,7 +1676,7 @@ export default function DashboardPage() {
                 <SelectItem value="Auto">Auto (from role)</SelectItem>
                 <SelectItem value="Finance Lead">Finance Lead view</SelectItem>
                 <SelectItem value="Auditor">Auditor view</SelectItem>
-                <SelectItem value="Minister / Executive">Minister / Executive view</SelectItem>
+                <SelectItem value="Executive">Executive view</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1552,7 +1751,12 @@ export default function DashboardPage() {
               <div className="mt-1 text-xs text-muted-foreground">Estimated recoverable if triaged this quarter.</div>
             </div>
             <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
-              <div className="text-xs font-semibold text-muted-foreground">Ghost / anomaly workers (signals)</div>
+              <div className="text-xs font-semibold text-muted-foreground">
+                {profile?.orgType &&
+                ["Home Care Agency", "Childcare Center", "Restaurant Group", "SME"].includes(profile.orgType)
+                  ? "Payroll anomaly signals"
+                  : "Ghost / anomaly workers (signals)"}
+              </div>
               <div className="mt-2 text-xl font-semibold tabular-nums text-foreground">{pilotRoi.ghost}</div>
               <div className="mt-1 text-xs text-muted-foreground">Payroll + identity anomalies flagged for review.</div>
             </div>
@@ -1562,15 +1766,26 @@ export default function DashboardPage() {
               <div className="mt-1 text-xs text-muted-foreground">Scenario-weighted pressure vs. plan.</div>
             </div>
             <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
-              <div className="text-xs font-semibold text-muted-foreground">{orgLabel} above benchmark</div>
+              <div className="text-xs font-semibold text-muted-foreground">
+                {profile?.orgType === "Restaurant Group"
+                  ? "Locations above benchmark"
+                  : profile?.orgType === "Home Care Agency"
+                    ? "Service lines above benchmark"
+                    : profile?.orgType === "Childcare Center"
+                      ? "Centers above benchmark"
+                      : `${orgLabel} above benchmark`}
+              </div>
               <div className="mt-2 text-xl font-semibold tabular-nums text-foreground">{pilotRoi.deptAbove}</div>
               <div className="mt-1 text-xs text-muted-foreground">Outliers vs. peer concentration in the last window.</div>
             </div>
           </CardContent>
         </Card>
 
-        <MarketRegulatoryWidget />
+        {!["Home Care Agency", "Childcare Center", "Restaurant Group", "SME"].includes(profile?.orgType || "") ? (
+          <MarketRegulatoryWidget />
+        ) : null}
 
+        {!["Home Care Agency", "Childcare Center", "Restaurant Group", "SME"].includes(profile?.orgType || "") ? (
         <Card className="border-border/60 shadow-md lg:col-span-12">
           <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -1670,6 +1885,7 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+        ) : null}
       </div>
 
 

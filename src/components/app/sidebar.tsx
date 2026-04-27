@@ -14,8 +14,22 @@ import { Button } from "@/components/ui/button";
 import { useProfile } from "@/lib/profile/client";
 import { useClientSession } from "@/hooks/use-client-session";
 import { formatTenantRoleLabel } from "@/lib/tenants/types";
+import { loadInvestigationsRemote } from "@/lib/investigations/storage";
 
 const SIDEBAR_COLLAPSE_KEY = "spendda_sidebar_collapsed";
+
+function sidebarFooterLine(
+  profile: ReturnType<typeof useProfile>["profile"],
+  portal: boolean,
+  client: ReturnType<typeof useClientSession>["client"],
+): string {
+  const org = profile?.orgType?.trim() || "SME";
+  if (portal && client?.role) {
+    return `${org} · ${formatTenantRoleLabel(client.role)}`;
+  }
+  const role = profile?.role?.trim() || "Member";
+  return `${org} · ${role}`;
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -30,6 +44,7 @@ export function Sidebar() {
   const groups = groupedNav(items);
   const [collapsed, setCollapsed] = React.useState(false);
   const [hydrated, setHydrated] = React.useState(false);
+  const [openAlertCount, setOpenAlertCount] = React.useState(0);
 
   React.useEffect(() => {
     try {
@@ -40,6 +55,19 @@ export function Sidebar() {
     }
     setHydrated(true);
   }, []);
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const meta = await loadInvestigationsRemote({ clientId: client?.clientId ?? null });
+      if (!alive) return;
+      const n = Object.values(meta).filter((r) => r.status !== "Closed").length;
+      setOpenAlertCount(n);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [client?.clientId, pathname]);
 
   function toggleCollapsed() {
     setCollapsed((c) => {
@@ -53,16 +81,15 @@ export function Sidebar() {
     });
   }
 
-  const widthClass = collapsed ? "w-[76px]" : "w-[292px]";
+  const widthClass = collapsed ? "w-[76px]" : "w-[220px]";
 
   const linkClass = (active: boolean) =>
     cn(
-      "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-[background,color,box-shadow,transform] duration-200 ease-out",
-      collapsed && "justify-center px-2",
+      "relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-[background,color] duration-200 ease-out",
+      collapsed && "justify-center px-1.5",
       active
-        ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-primary/35 shadow-inner dark:shadow-[inset_0_1px_0_hsl(0_0%_100%/0.08)]"
-        : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
-      "motion-safe:active:scale-[0.98]",
+        ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-primary/30"
+        : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
     );
 
   return (
@@ -72,118 +99,118 @@ export function Sidebar() {
         widthClass,
       )}
     >
+      <div
+        className={cn(
+          "flex min-h-[4rem] items-center gap-2.5 border-b border-sidebar-border px-2.5 py-2.5",
+          collapsed && "justify-center px-1.5",
+        )}
+      >
         <div
           className={cn(
-            "flex min-h-[4.5rem] items-center gap-3 border-b border-sidebar-border px-3 py-3",
-            collapsed && "justify-center px-2",
+            "flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-card shadow-sm ring-1 ring-primary/20",
+            collapsed ? "h-9 w-9" : "h-10 w-10",
           )}
         >
-          <div
-            className={cn(
-              "flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-card shadow-[0_12px_40px_rgba(59,130,246,0.35)] ring-1 ring-primary/25",
-              collapsed ? "h-11 w-11" : "h-[56px] w-[56px]",
-            )}
-          >
-            <Image
-              src="/brand/spendda-logo.png"
-              alt="Spendda"
-              width={56}
-              height={56}
-              sizes="56px"
-              className={cn("object-contain p-0.5", collapsed ? "h-9 w-9" : "h-[52px] w-[52px]")}
-              priority
-            />
-          </div>
-          {!collapsed ? (
-            <div className="min-w-0 flex-1 leading-tight">
-              <div className="font-heading text-sm font-semibold tracking-tight text-sidebar-foreground">Spendda</div>
-              <div className="text-[10px] font-medium leading-snug text-sidebar-foreground/55">
-                {client?.clientName ? client.clientName : organizationShellSubtitle(profile?.orgType)}
-              </div>
-              <div className="mt-1 truncate text-xs text-sidebar-foreground/50">
-                {portal && client?.role ? (
-                  <>
-                    <span className="text-sidebar-foreground/60">Tenant role:</span>{" "}
-                    {formatTenantRoleLabel(client.role)}
-                    {client.planTier ? (
-                      <>
-                        {" "}
-                        · <span className="text-sidebar-foreground/60">Plan:</span> {client.planTier}
-                      </>
-                    ) : null}
-                  </>
-                ) : profile ? (
-                  `${profile.orgType} · ${profile.activeEntity}`
-                ) : (
-                  "Finance & payroll signal"
-                )}
-              </div>
-            </div>
-          ) : null}
+          <Image
+            src="/brand/spendda-logo.png"
+            alt="Spendda"
+            width={40}
+            height={40}
+            sizes="40px"
+            className={cn("object-contain p-0.5", collapsed ? "h-7 w-7" : "h-9 w-9")}
+            priority
+          />
         </div>
-
-        <div className={cn("flex items-center justify-end px-2 py-2", collapsed && "justify-center")}>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={toggleCollapsed}
-            disabled={!hydrated}
-            className="h-8 w-8 shrink-0 rounded-lg border border-sidebar-border bg-sidebar-accent/50 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
-        </div>
-
-        <div className="h-px w-full bg-sidebar-border" />
-
-        <ScrollArea className="flex-1">
-          <nav className="grid gap-4 p-2 pb-6">
-            {groups.map((g) => (
-              <div key={g.section} className="grid gap-1">
-                {!collapsed ? (
-                  <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-sidebar-foreground/40">
-                    {g.label}
-                  </div>
-                ) : (
-                  <div className="mx-auto my-1 h-px w-8 rounded-full bg-sidebar-border" aria-hidden />
-                )}
-                {g.items.map((item) => {
-                  const active =
-                    pathname === item.href || (item.href !== "/app/dashboard" && pathname.startsWith(item.href));
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      title={collapsed ? item.label : undefined}
-                      className={linkClass(active)}
-                    >
-                      <Icon
-                        className={cn(
-                          "h-[18px] w-[18px] shrink-0 opacity-90",
-                          active && "text-primary",
-                        )}
-                      />
-                      {!collapsed ? (
-                        <span className="min-w-0 break-words text-left leading-snug">{item.label}</span>
-                      ) : null}
-                    </Link>
-                  );
-                })}
-              </div>
-            ))}
-          </nav>
-        </ScrollArea>
-
         {!collapsed ? (
-          <div className="border-t border-sidebar-border p-4 text-xs leading-relaxed text-sidebar-foreground/50">
-            {profile?.primaryGoals?.length
-              ? `Optimized for: ${profile.primaryGoals.slice(0, 2).join(", ")}${profile.primaryGoals.length > 2 ? "…" : ""}`
-              : "Optimized for: spend oversight, payroll narrative…"}
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="font-heading text-sm font-semibold tracking-tight text-sidebar-foreground">Spendda</div>
+            <div className="truncate text-[10px] font-medium leading-snug text-sidebar-foreground/55">
+              {client?.clientName ? client.clientName : organizationShellSubtitle(profile?.orgType)}
+            </div>
           </div>
         ) : null}
+      </div>
+
+      <div className={cn("flex items-center justify-end px-2 py-1.5", collapsed && "justify-center")}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={toggleCollapsed}
+          disabled={!hydrated}
+          className="h-7 w-7 shrink-0 rounded-lg border border-sidebar-border bg-sidebar-accent/50 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
+
+      <div className="h-px w-full bg-sidebar-border" />
+
+      <ScrollArea className="flex-1">
+        <nav className="grid gap-3 px-2 py-3 pb-4">
+          {groups.map((g) => (
+            <div key={g.section} className="grid gap-0.5">
+              {!collapsed ? (
+                <div className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/45">
+                  {g.label}
+                </div>
+              ) : (
+                <div className="mx-auto my-1 h-px w-6 rounded-full bg-sidebar-border" aria-hidden />
+              )}
+              {g.items.map((item) => {
+                const active =
+                  pathname === item.href || (item.href !== "/app/dashboard" && pathname.startsWith(item.href));
+                const Icon = item.icon;
+                const isAiWorkspace = item.href === "/app/ai-workspace";
+                const isAlerts = item.href === "/app/alerts";
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    title={collapsed ? item.label : undefined}
+                    className={linkClass(active)}
+                  >
+                    <Icon
+                      className={cn(
+                        "h-[17px] w-[17px] shrink-0 opacity-90",
+                        active && "text-primary",
+                      )}
+                    />
+                    {!collapsed ? (
+                      <>
+                        <span className="min-w-0 flex-1 truncate text-left text-[13px] leading-snug">{item.label}</span>
+                        <span className="flex shrink-0 items-center gap-1">
+                          {isAiWorkspace && active ? (
+                            <span
+                              className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_2px_hsl(var(--sidebar)_/_0.9)]"
+                              aria-hidden
+                              title="Active"
+                            />
+                          ) : null}
+                          {isAlerts && openAlertCount > 0 && !active ? (
+                            <span
+                              className="h-1.5 w-1.5 rounded-full bg-amber-500"
+                              aria-hidden
+                              title={`${openAlertCount} open`}
+                            />
+                          ) : null}
+                        </span>
+                      </>
+                    ) : null}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+      </ScrollArea>
+
+      {!collapsed ? (
+        <div className="border-t border-sidebar-border px-3 py-3 text-[11px] leading-snug text-sidebar-foreground/55">
+          <div className="truncate">{sidebarFooterLine(profile, portal, client)}</div>
+        </div>
+      ) : null}
     </aside>
   );
 }

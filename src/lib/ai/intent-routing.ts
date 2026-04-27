@@ -233,6 +233,37 @@ export function routeUserIntent(
   return "conversational";
 }
 
+/** SME workspace routing — every message is one of these four buckets. */
+export type MessageIntent = "conversational" | "data_question" | "upload_prompt" | "help_question";
+
+/**
+ * Classifies the latest user message for empty-state vs conversational handling.
+ * Order: upload → product help → data/reports → default chat.
+ */
+export function detectMessageIntent(
+  q: string,
+  turns?: readonly { role: string; content: string }[] | undefined,
+): MessageIntent {
+  const t = norm(q.trim().toLowerCase());
+  const mergedUser = mergeUserTurnsOnly(q, turns);
+
+  const uploadLike =
+    /\b(how (do|can) i upload|where (do|can) i upload|upload (a |my )?file|attach (a )?file|drag (a )?file|paperclip|what files work|what file formats work|what formats work|what (file|spreadsheet) (can i use|should i)|can i use (a )?(quickbooks|qb|excel|csv|xlsx|spreadsheet)|quickbooks export|gusto (payroll )?report|square export)\b/i;
+  if (uploadLike.test(mergedUser) || uploadLike.test(t)) return "upload_prompt";
+
+  const helpLike =
+    /\b(what can you do|what do you do|how does (this|the|spendda) (work|product)|what is spendda|what('s| is) spendda|explain (the )?product|what will you tell me(\s+from my data)?|show me an example)\b/i;
+  if (helpLike.test(mergedUser) || helpLike.test(t)) return "help_question";
+
+  const reportLike =
+    /\b(build|generate|create|export|download)\b.*\b(monthly|executive|payroll|cfo|owner|controller)?\s*(report|brief|pdf|pack)\b|\b(monthly|executive|payroll)\s+(report|brief)\b|\bowner monthly\b|\bexpense trends\b|\brisk\s*&\s*action\s*report\b/i;
+  if (reportLike.test(mergedUser) || reportLike.test(t)) return "data_question";
+
+  if (wantsAnalytics(mergedUser) || wantsAnalytics(t)) return "data_question";
+
+  return "conversational";
+}
+
 /** User asked for long-form tables, evidence dumps, or narrative depth. */
 export function wantsDeepDetail(ql: string): boolean {
   const t = norm(ql.toLowerCase());

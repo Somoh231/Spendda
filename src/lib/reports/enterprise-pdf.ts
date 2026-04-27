@@ -8,6 +8,23 @@ import type { EnterpriseExportOptions } from "./export-options";
 import type { ReportBundle } from "./report-bundle";
 import { portfolioHealthScore } from "./health-score";
 
+function isSmeOrg(orgType?: string): boolean {
+  return ["Home Care Agency", "Childcare Center", "Restaurant Group", "SME"].includes(orgType ?? "");
+}
+
+function deptLabel(orgType?: string): string {
+  switch (orgType) {
+    case "Restaurant Group":
+      return "Location";
+    case "Home Care Agency":
+      return "Service line";
+    case "Childcare Center":
+      return "Center";
+    default:
+      return "Department";
+  }
+}
+
 const BRAND_NAVY: [number, number, number] = [8, 18, 37];
 const BRAND_BLUE: [number, number, number] = [59, 130, 246];
 
@@ -303,12 +320,34 @@ export async function buildEnterprisePdfBlob(
     doc,
     ["Metric", "Value"],
     [
-      ["Spend (30d)", fmtMoney(k.totalSpend30d, cur)],
-      ["Payroll (monthly)", fmtMoney(k.payrollMonthly, cur)],
-      ["Flags (30d)", String(k.flags30d)],
-      ["Savings opportunity", fmtMoney(k.savingsOpportunity30d, cur)],
-      ["Forecast risk score", `${k.forecastRiskScore}/100`],
-      ["Portfolio health score", `${portfolioHealthScore(bundle)}/100`],
+      [
+        isSmeOrg(opts.orgType)
+          ? opts.orgType === "Restaurant Group"
+            ? "Total revenue"
+            : "Total operating cost"
+          : "Spend (30d)",
+        fmtMoney(k.totalSpend30d, cur),
+      ],
+      [
+        isSmeOrg(opts.orgType)
+          ? opts.orgType === "Home Care Agency"
+            ? "Caregiver pay"
+            : opts.orgType === "Restaurant Group"
+              ? "Labor cost"
+              : "Staff payroll"
+          : "Payroll (monthly)",
+        fmtMoney(k.payrollMonthly, cur),
+      ],
+      [isSmeOrg(opts.orgType) ? "Items flagged for review" : "Flags (30d)", String(k.flags30d)],
+      [
+        isSmeOrg(opts.orgType) ? "Potential savings identified" : "Savings opportunity",
+        fmtMoney(k.savingsOpportunity30d, cur),
+      ],
+      [isSmeOrg(opts.orgType) ? "Risk score" : "Forecast risk score", `${k.forecastRiskScore}/100`],
+      [
+        isSmeOrg(opts.orgType) ? "Business health score" : "Portfolio health score",
+        `${portfolioHealthScore(bundle)}/100`,
+      ],
     ],
     y + 4,
     { maxY: bottomSafe, includeRaw: true },
@@ -383,7 +422,11 @@ export async function buildEnterprisePdfBlob(
     addBodyPage();
     y = 56;
   }
-  y = drawSectionTitle(doc, "4. Department performance", y + 6);
+  y = drawSectionTitle(
+    doc,
+    isSmeOrg(opts.orgType) ? `4. ${deptLabel(opts.orgType)} performance` : "4. Department performance",
+    y + 6,
+  );
   y = wrapParagraph(doc, narrative.departmentNarrative, 48, y, pageW - 96, 14);
   const deptRows = [...bundle.summary.departmentSpend30d]
     .sort((a, b) => b.value - a.value)
@@ -397,7 +440,11 @@ export async function buildEnterprisePdfBlob(
   if (opts.includeRawTables) {
     y = drawTable(
       doc,
-      ["Department", "Spend", "Vs next peer"],
+      [
+        isSmeOrg(opts.orgType) ? deptLabel(opts.orgType) : "Department",
+        isSmeOrg(opts.orgType) ? (opts.orgType === "Restaurant Group" ? "Revenue" : "Cost") : "Spend",
+        "Vs next",
+      ],
       deptRows,
       y + 4,
       { maxY: bottomSafe, includeRaw: true },
@@ -418,18 +465,42 @@ export async function buildEnterprisePdfBlob(
     addBodyPage();
     y = 56;
   }
-  y = drawSectionTitle(doc, "5. Forecasting outlook", y + 6);
+  y = drawSectionTitle(
+    doc,
+    isSmeOrg(opts.orgType) ? "5. Financial outlook" : "5. Forecasting outlook",
+    y + 6,
+  );
   y = wrapParagraph(doc, narrative.forecastNarrative, 48, y, pageW - 96, 14);
   const fc = bundle.forecast.cards;
   y = drawTable(
     doc,
     ["Indicator", "Value"],
-    [
-      ["Budget shortfall", fmtMoney(fc.budgetShortfall, cur)],
-      ["Retirement wave", `${fc.retirementWavePct.toFixed(1)}%`],
-      ["Payroll growth", `${fc.payrollGrowthPct.toFixed(1)}%`],
-      ["Overspend risk", `${fc.overspendRiskScore}/100`],
-    ],
+    isSmeOrg(opts.orgType)
+      ? [
+          [
+            opts.orgType === "Home Care Agency"
+              ? "Cash runway pressure"
+              : opts.orgType === "Restaurant Group"
+                ? "Revenue shortfall risk"
+                : "Budget pressure",
+            fmtMoney(fc.budgetShortfall, cur),
+          ],
+          [
+            opts.orgType === "Home Care Agency"
+              ? "Payroll as % of revenue"
+              : opts.orgType === "Restaurant Group"
+                ? "Labor cost trend"
+                : "Payroll growth",
+            `${fc.payrollGrowthPct.toFixed(1)}%`,
+          ],
+          ["Overspend risk", `${fc.overspendRiskScore}/100`],
+        ]
+      : [
+          ["Budget shortfall", fmtMoney(fc.budgetShortfall, cur)],
+          ["Retirement wave", `${fc.retirementWavePct.toFixed(1)}%`],
+          ["Payroll growth", `${fc.payrollGrowthPct.toFixed(1)}%`],
+          ["Overspend risk", `${fc.overspendRiskScore}/100`],
+        ],
     y + 4,
     { maxY: bottomSafe, includeRaw: true },
   );
@@ -439,11 +510,44 @@ export async function buildEnterprisePdfBlob(
     addBodyPage();
     y = 56;
   }
-  y = drawSectionTitle(doc, "6. Recommendations", y + 6);
-  y = drawBullets(doc, narrative.recommendations, 48, y, pageW - 96);
+  y = drawSectionTitle(doc, "6. Recommended actions", y + 6);
+
+  const smeRecommendations: Record<string, string[]> = {
+    "Home Care Agency": [
+      "Review caregiver overtime — target payroll under 60% of revenue.",
+      "Chase overdue client invoices before next payroll cycle.",
+      "Confirm Medicaid reimbursement submissions are up to date.",
+      "Check evening shift staffing levels to reduce weekend overtime.",
+    ],
+    "Childcare Center": [
+      "Verify staff-to-child ratios are within state licensing requirements.",
+      "Follow up on delayed subsidy payments from state programs.",
+      "Review part-time scheduling across centers for cost efficiency.",
+      "Compare cost per enrolled child across locations and investigate gaps.",
+    ],
+    "Restaurant Group": [
+      "Investigate underperforming location — compare labor % to group average.",
+      "Review food vendor invoices for duplicates or unexplained price increases.",
+      "Set labor cost % target per location and track weekly.",
+      "Check for duplicate or split invoices from primary food suppliers.",
+    ],
+    SME: [
+      "Review top 3 vendors — they represent a high share of total spend.",
+      "Confirm there are no duplicate or recurring payments to investigate.",
+      "Compare this month's payroll % to your 3-month rolling average.",
+      "Schedule a monthly review of flagged transactions with your accountant.",
+    ],
+  };
+
+  const recommendationBullets =
+    isSmeOrg(opts.orgType) && opts.orgType && smeRecommendations[opts.orgType]
+      ? smeRecommendations[opts.orgType]
+      : narrative.recommendations;
+
+  y = drawBullets(doc, recommendationBullets, 48, y, pageW - 96);
 
   const externalBullets = opts.marketRegulatoryBullets?.filter(Boolean) ?? [];
-  if (externalBullets.length) {
+  if (externalBullets.length && !isSmeOrg(opts.orgType)) {
     if (y > bottomSafe - 80) {
       addBodyPage();
       y = 56;
@@ -461,7 +565,7 @@ export async function buildEnterprisePdfBlob(
   }
 
   // ML overlay (assistive) — included when available.
-  if (bundle.ml) {
+  if (bundle.ml && !isSmeOrg(opts.orgType)) {
     if (y > bottomSafe - 120) {
       addBodyPage();
       y = 56;
