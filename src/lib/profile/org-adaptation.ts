@@ -15,6 +15,14 @@ export function entityNavLabel(orgType: OrgType | undefined): string {
       return "Clinical Units";
     case "Bank":
       return "Branches";
+    case "Home Care Agency":
+      return "Service Lines";
+    case "Childcare Center":
+      return "Centers";
+    case "Restaurant Group":
+      return "Locations";
+    case "SME":
+      return "Departments";
     default:
       return "Departments";
   }
@@ -34,6 +42,14 @@ export function organizationShellSubtitle(orgType: OrgType | undefined): string 
       return "Clinical operations & supplier intelligence";
     case "Bank":
       return "Compliance, contracts, and efficiency";
+    case "Home Care Agency":
+      return "Caregiver pay, client billing & cash runway";
+    case "Childcare Center":
+      return "Staff ratios, subsidy billing & payroll health";
+    case "Restaurant Group":
+      return "Revenue, labor cost & location performance";
+    case "SME":
+      return "Spend, payroll & monthly financial clarity";
     default:
       return "Public Accountability Intelligence™";
   }
@@ -84,6 +100,34 @@ export function orgSignalsForType(orgType: OrgType | undefined): OrgSignal[] {
         { title: "Vendor contracts", detail: "Renewal, rate, and obligation risk clustering.", tone: "amber" },
         { title: "Headcount efficiency", detail: "FTE vs. spend benchmarks across branches.", tone: "blue" },
         { title: "Executive risk dashboards", detail: "Board-grade roll-ups with confidence scoring.", tone: "blue" },
+      ];
+    case "Home Care Agency":
+      return [
+        { title: "Payroll vs revenue", detail: "Caregiver pay as % of billable hours — healthy target is under 60%.", tone: "amber" },
+        { title: "Overdue invoices", detail: "Client billing gaps and Medicaid reimbursement delays.", tone: "rose" },
+        { title: "Overtime by shift", detail: "Evening and weekend overtime patterns by caregiver group.", tone: "amber" },
+        { title: "Cash runway", detail: "Weeks of coverage based on billing cycle and payroll dates.", tone: "blue" },
+      ];
+    case "Childcare Center":
+      return [
+        { title: "Staff ratio compliance", detail: "Caregiver-to-child ratios vs state licensing requirements.", tone: "rose" },
+        { title: "Subsidy billing gaps", detail: "State subsidy payments vs enrollment — late or missing.", tone: "amber" },
+        { title: "Payroll by center", detail: "Staff cost per enrolled child across locations.", tone: "blue" },
+        { title: "Operating cost trend", detail: "Monthly cost trajectory vs enrollment revenue.", tone: "emerald" },
+      ];
+    case "Restaurant Group":
+      return [
+        { title: "Labor cost %", detail: "Labor as % of revenue vs 30% benchmark — by location.", tone: "amber" },
+        { title: "Location ranking", detail: "Revenue and margin ranked — spot your strongest and weakest.", tone: "blue" },
+        { title: "Food cost %", detail: "COGS trends with duplicate vendor invoice detection.", tone: "rose" },
+        { title: "Location gap", detail: "What your top location does differently vs the lowest.", tone: "emerald" },
+      ];
+    case "SME":
+      return [
+        { title: "Cash position", detail: "Weekly cash in vs out — how many weeks of runway you have.", tone: "blue" },
+        { title: "Top vendor spend", detail: "Which vendors take the most — and whether that's justified.", tone: "amber" },
+        { title: "Payroll health", detail: "Payroll as % of revenue with month-over-month trend.", tone: "emerald" },
+        { title: "Anomalies", detail: "Duplicate payments, unusual spikes, and invoices worth reviewing.", tone: "rose" },
       ];
     default:
       return [

@@ -11,6 +11,8 @@ export type EnterpriseExportOptions = {
   includeCharts: boolean;
   includeRawTables: boolean;
   confidentialWatermark: boolean;
+  /** Optional organization type for industry-aware titles/labels. */
+  orgType?: string;
   /** Optional appendix lines (client-filtered market & regulatory intelligence). */
   marketRegulatoryBullets?: string[];
 };

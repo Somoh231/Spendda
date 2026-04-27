@@ -107,10 +107,10 @@ export function LoginForm() {
   return (
     <Card className="border-white/10 bg-slate-950/60 text-white shadow-[0_30px_120px_rgba(2,6,23,0.55)] backdrop-blur">
       <CardHeader className="space-y-2">
-        <CardTitle className="text-2xl tracking-[-0.02em] text-white">Welcome back</CardTitle>
+        <CardTitle className="text-2xl tracking-[-0.02em] text-white">Your business finances, finally clear.</CardTitle>
         <p className="text-sm leading-7 text-slate-300">
-          Sign in with your organization credentials, or open the governed demo—no ERP hookups required to see the full
-          story arc.
+          Spendda connects the dots between what you spend, what you pay your team, and what's actually happening in your
+          business.
         </p>
       </CardHeader>
       <CardContent className="grid gap-6">
@@ -120,7 +120,7 @@ export function LoginForm() {
             <Input
               id="email"
               type="email"
-              placeholder="name@org.gov"
+              placeholder="name@business.com"
               autoComplete="email"
               className="border-white/10 bg-white/5 text-white placeholder:text-slate-500"
               {...form.register("email")}
@@ -171,10 +171,10 @@ export function LoginForm() {
           </Button>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Try Spendda instantly</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">TRY SPENDDA INSTANTLY</p>
             <p className="mt-1 text-xs leading-relaxed text-slate-400">
-              Both options use a sandbox tenant. The green button also seeds sample uploads so dashboards populate on
-              first load—ideal for investor or buyer demos.
+              Both options use a sandbox workspace. The green button seeds sample data so you can explore the full product
+              immediately — no file upload needed.
             </p>
           </div>
 

@@ -496,10 +496,10 @@ export function GlobalAiAssistant() {
       }
 
       const detected = describeIngestKind(parsed.rows);
-      const insight = ingestWorkspaceUpload(parsed.rows, parsed.filename, targetEntity);
-      const dataset = ingestWorkspaceDataset(parsed.rows, parsed.filename, targetEntity);
-      upsertWorkspaceDataset(dataset, clientId);
-      upsertUploadedInsights(insight, clientId);
+      const ingested = ingestWorkspaceUpload(parsed.rows, parsed.filename, targetEntity, undefined, parsed.quality.warnings);
+      const ds = ingestWorkspaceDataset(parsed.rows, parsed.filename, targetEntity, undefined, parsed.quality.warnings);
+      upsertWorkspaceDataset(ds.dataset, clientId);
+      upsertUploadedInsights(ingested.insight, clientId);
 
       // Best-effort cloud metadata persistence (tenant-scoped).
       try {
@@ -520,8 +520,8 @@ export function GlobalAiAssistant() {
         const metaJson = (await metaRes.json().catch(() => ({}))) as { ok?: boolean; id?: string };
         if (metaRes.ok && metaJson.ok && metaJson.id) {
           const chunkSize = 800;
-          if (dataset.kind === "spend") {
-            const rows = dataset.rows as { date?: string; vendor?: string; amount?: number; department?: string; category?: string; invoiceId?: string }[];
+          if (ds.dataset.kind === "spend") {
+            const rows = ds.dataset.rows as { date?: string; vendor?: string; amount?: number; department?: string; category?: string; invoiceId?: string }[];
             for (let i = 0; i < rows.length; i += chunkSize) {
               const chunk = rows.slice(i, i + chunkSize);
               // eslint-disable-next-line no-await-in-loop
@@ -542,7 +542,7 @@ export function GlobalAiAssistant() {
               });
             }
           } else {
-            const rows = dataset.rows as { employeeName?: string; salaryCurrent?: number; department?: string }[];
+            const rows = ds.dataset.rows as { employeeName?: string; salaryCurrent?: number; department?: string }[];
             for (let i = 0; i < rows.length; i += chunkSize) {
               const chunk = rows.slice(i, i + chunkSize);
               // eslint-disable-next-line no-await-in-loop

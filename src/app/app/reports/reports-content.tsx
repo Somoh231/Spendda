@@ -107,6 +107,9 @@ export default function ReportsPage() {
   >([]);
   const [monthlyBusy, setMonthlyBusy] = React.useState(false);
   const [lastMonthly, setLastMonthly] = React.useState<{ rangeFrom?: string; rangeTo?: string; periodLabel: string } | null>(null);
+  const [monthlyPreview, setMonthlyPreview] = React.useState<MonthlyExecutiveReport | null>(null);
+  const [monthlyPreviewSource, setMonthlyPreviewSource] = React.useState<"tenant" | "upload" | null>(null);
+  const [previewBusy, setPreviewBusy] = React.useState(false);
 
   React.useEffect(() => {
     setMounted(true);
@@ -196,7 +199,9 @@ export default function ReportsPage() {
   const [periodYear, setPeriodYear] = React.useState(() => new Date().getUTCFullYear());
   const [periodRange, setPeriodRange] = React.useState<DateRange>({});
   const [periodLabelLocked, setPeriodLabelLocked] = React.useState(false);
-  const [organizationName, setOrganizationName] = React.useState(DEFAULT_EXPORT_OPTIONS.organizationName);
+  const [organizationName, setOrganizationName] = React.useState(
+    profile?.activeEntity || DEFAULT_EXPORT_OPTIONS.organizationName
+  );
   const [entity, setEntity] = React.useState(DEFAULT_EXPORT_OPTIONS.entity);
   const [entitiesSelected, setEntitiesSelected] = React.useState<string[]>([]);
   const [includeLogo, setIncludeLogo] = React.useState(DEFAULT_EXPORT_OPTIONS.includeLogo);
@@ -218,6 +223,12 @@ export default function ReportsPage() {
     // default to active entity (single) when profile changes
     if (!profile?.activeEntity) return;
     setEntitiesSelected([profile.activeEntity]);
+  }, [profile?.activeEntity]);
+
+  React.useEffect(() => {
+    if (profile?.activeEntity && organizationName === DEFAULT_EXPORT_OPTIONS.organizationName) {
+      setOrganizationName(profile.activeEntity);
+    }
   }, [profile?.activeEntity]);
 
   const entityOptions = React.useMemo(() => {
@@ -261,6 +272,7 @@ export default function ReportsPage() {
         includeCharts,
         includeRawTables,
         confidentialWatermark,
+        orgType: profile?.orgType,
       },
       periodPreset,
       periodCustom,
@@ -492,6 +504,13 @@ export default function ReportsPage() {
   }
 
   async function exportEnterpriseExecutivePdf() {
+    // Guard: require uploaded data for SME reports
+    if (workspace.dataSource !== "upload" && !canExportMonthlyUpload) {
+      toast.error("Upload your data first", {
+        description: "Generate a report from your actual files — drop a CSV or Excel in Upload Data first.",
+      });
+      return;
+    }
     setBusy(true);
     try {
       const bundle = await fetchReportBundle();
@@ -510,19 +529,52 @@ export default function ReportsPage() {
   }
 
   async function exportBoardPackPdf() {
+    // Guard: require uploaded data for SME reports
+    if (workspace.dataSource !== "upload" && !canExportMonthlyUpload) {
+      toast.error("Upload your data first", {
+        description: "Generate a report from your actual files — drop a CSV or Excel in Upload Data first.",
+      });
+      return;
+    }
     setBusy(true);
     try {
+      // If user has uploaded data, use it as primary source
+      if (canExportMonthlyUpload && uploadMerge) {
+        const opts = buildOpts();
+        const report = buildMonthlyExecutiveReportFromUpload({
+          organizationName: opts.organizationName,
+          entityLabel: uploadMerge.scopeLabel,
+          metricsEntity: workspace.primaryEntity,
+          periodLabel: opts.periodLabel,
+          range: scope.range,
+          spendDataset: uploadMerge.spend,
+          payrollDataset: uploadMerge.payroll,
+          orgType: profile?.orgType,
+        });
+        if (!report) {
+          toast.error("Could not build report", {
+            description: "Check that your uploaded file has valid spend or payroll data.",
+          });
+          return;
+        }
+        const blob = await buildMonthlyBoardPdfBlob(report, opts);
+        downloadBlob(`${opts.organizationName.replace(/\s+/g, "-").toLowerCase()}-monthly-report.pdf`, blob);
+        toast.success("Monthly report ready", {
+          description: `${report.kpis.totalSpend > 0 ? `Spend: $${Math.round(report.kpis.totalSpend).toLocaleString()} · ` : ""}${report.anomalyRows.length} flags reviewed.`,
+        });
+        void recordReport("monthly_board_pdf", "Monthly Report");
+        return;
+      }
+      // Fallback to demo bundle for demo mode
       const bundle = await fetchReportBundle();
       const opts = buildOpts();
       const blob = await buildEnterprisePdfBlob(bundle, briefs, items, opts, "board");
       downloadBlob("spendda-board-pack.pdf", blob);
-      toast.success("Board pack PDF ready", { description: "Board-ready document saved to downloads." });
+      toast.success("Board pack PDF ready");
       void recordReport("board_pack_pdf", "Board pack PDF");
-      void appendPortalAudit({ action: "export.pdf", detail: "board_pack" });
-      void recordTenantUsage({ kind: "export" });
     } catch (e) {
-      toast.error("Board pack failed", {
-        description: e instanceof Error ? e.message : "Could not build the board pack PDF.",
+      toast.error("Report failed", {
+        description: e instanceof Error ? e.message : "Could not build the report.",
       });
     } finally {
       setBusy(false);
@@ -540,6 +592,7 @@ export default function ReportsPage() {
       range: scope.range,
       spendDataset: uploadMerge.spend,
       payrollDataset: uploadMerge.payroll,
+      orgType: profile?.orgType,
     });
   }
 
@@ -764,6 +817,33 @@ export default function ReportsPage() {
       toast.error("Monthly report failed", { description: e instanceof Error ? e.message : "Unknown error" });
     } finally {
       setMonthlyBusy(false);
+    }
+  }
+
+  async function buildMonthlyPreview(rangeOverride?: DateRange, labelOverride?: string) {
+    const r = rangeOverride || scope.range;
+    const label = labelOverride || buildOpts().periodLabel;
+    setPreviewBusy(true);
+    try {
+      let report = await buildTenantMonthlyReport({ range: r, periodLabel: label });
+      if (report) {
+        setMonthlyPreview(report);
+        setMonthlyPreviewSource("tenant");
+        return;
+      }
+      const uploadReport = buildUploadMonthlyReportOrNull();
+      if (uploadReport) {
+        setMonthlyPreview(uploadReport);
+        setMonthlyPreviewSource("upload");
+        return;
+      }
+      setMonthlyPreview(null);
+      setMonthlyPreviewSource(null);
+      toast.error("Nothing to preview", { description: "No tenant rows (or uploads) in the selected date range." });
+    } catch (e) {
+      toast.error("Preview failed", { description: e instanceof Error ? e.message : "Unknown error" });
+    } finally {
+      setPreviewBusy(false);
     }
   }
 
@@ -1334,113 +1414,192 @@ export default function ReportsPage() {
               <LayoutDashboard className="h-5 w-5 text-[var(--spendda-blue)]" />
             </div>
             <div>
-              <CardTitle className="text-base font-semibold">Premium monthly reporting</CardTitle>
+              <CardTitle className="text-base font-semibold">
+                {profile?.orgType === "Home Care Agency"
+                  ? "Monthly reporting for home care"
+                  : profile?.orgType === "Childcare Center"
+                    ? "Monthly reporting for childcare"
+                    : profile?.orgType === "Restaurant Group"
+                      ? "Monthly reporting for restaurants"
+                      : "Monthly reporting"}
+              </CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Board-ready pack built from your <span className="font-medium text-foreground">tenant workspace data</span>{" "}
-                by default — executive summary, KPIs, trends, vendor/department breakdowns, anomalies, and actions. Uses
-                your global <span className="font-medium text-foreground">analytics date range</span> and entity scope
-                (same as dashboards). Falls back to upload-mode exports when tenant rows are unavailable.
+                One clear monthly report for your selected scope and date range. Preview first, then download the PDF.
               </p>
             </div>
           </div>
-          {canExportMonthlyUpload ? (
-            <Badge variant="secondary" className="shrink-0 rounded-lg">
-              Upload mode
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="shrink-0 rounded-lg">
-              {workspace.dataSource === "upload" ? "No files in scope" : "Demo mode"}
-            </Badge>
-          )}
+          <Badge variant="outline" className="shrink-0 rounded-lg">
+            {scope.range.from || scope.range.to ? smartLabelFromRange(scope.range) : "All time"}
+          </Badge>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/10 px-4 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-sm font-medium">Monthly report (pilot-ready)</div>
-              <Badge variant="outline" className="shrink-0">
-                {scope.range.from || scope.range.to ? smartLabelFromRange(scope.range) : "All time"}
-              </Badge>
+          {!canExportReports ? (
+            <div className="rounded-xl border border-border/60 bg-muted/10 px-4 py-3 text-sm text-muted-foreground">
+              Your role can view analytics, but cannot download reports from this workspace.
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                className="rounded-xl"
-                disabled={monthlyBusy || busy}
-                onClick={() => void generateMonthlyPilotPdf()}
-              >
-                {monthlyBusy ? "Generating…" : "Generate Monthly Report"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded-xl"
-                disabled={monthlyBusy || busy}
-                onClick={() => {
-                  const r = lastMonthly ? { from: lastMonthly.rangeFrom, to: lastMonthly.rangeTo } : scope.range;
-                  const label = lastMonthly?.periodLabel || buildOpts().periodLabel;
-                  void generateMonthlyPilotPdf(r, label);
-                }}
-              >
-                Download Monthly Report
-              </Button>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Executive summary, spend + payroll rollups, vendor/department breakdowns, anomalies, and actions. Saved to
-              report history for re-download.
-            </div>
-          </div>
-
-          {!canExportMonthlyUpload ? (
-            <p className="text-sm text-muted-foreground">
-              {workspace.dataSource === "upload"
-                ? "Load spend or payroll for the selected entities, or widen the analytics date range in the app header."
-                : "Switch the workspace to upload-backed data (Upload Data) to generate monthly exports from your files."}
-            </p>
-          ) : (
-            <>
-              <div className="rounded-xl border border-dashed border-border/70 bg-muted/15 px-4 py-3 text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">Scope:</span> {uploadMerge?.scopeLabel ?? "—"}
-                {(scope.range.from || scope.range.to) && (
-                  <>
-                    {" "}
-                    · <span className="font-semibold text-foreground">Dates:</span>{" "}
-                    {scope.range.from && scope.range.to
-                      ? `${scope.range.from} → ${scope.range.to}`
-                      : scope.range.from || scope.range.to || ""}
-                  </>
-                )}
+          ) : workspace.dataSource === "demo" ? (
+            <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/10 px-4 py-3">
+              <div className="text-sm font-medium">Upload data to generate a real monthly report</div>
+              <div className="text-xs text-muted-foreground">
+                Demo mode hides real reporting. Switch to upload-backed data to preview and download your monthly report.
               </div>
-              {!canExportReports ? (
-                <p className="text-xs text-muted-foreground">
-                  Your role can use on-screen analytics, but cannot download report files from this workspace.
-                </p>
-              ) : null}
+              <div>
+                <Link href="/app/upload-data">
+                  <Button className="rounded-xl">Upload data</Button>
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/10 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-medium">Monthly report preview</div>
+                <Badge variant="secondary" className="shrink-0 rounded-lg">
+                  {monthlyPreviewSource === "tenant"
+                    ? "Tenant data"
+                    : monthlyPreviewSource === "upload"
+                      ? "Uploads"
+                      : canExportMonthlyUpload
+                        ? "Uploads"
+                        : "—"}
+                </Badge>
+              </div>
+
+              {canExportMonthlyUpload && uploadMerge && (() => {
+                const preview = buildUploadMonthlyReportOrNull();
+                if (!preview) return null;
+                return (
+                  <div className="rounded-xl border border-border/60 bg-muted/10 p-4 text-sm">
+                    <div className="mb-2 font-semibold">Your report will include:</div>
+                    <div className="grid gap-1 text-xs text-muted-foreground">
+                      <div>
+                        ✓{" "}
+                        <span className="font-medium text-foreground">
+                          ${Math.round(preview.kpis.totalSpend).toLocaleString()}
+                        </span>{" "}
+                        total spend analyzed
+                      </div>
+                      {preview.kpis.payrollMonthly > 0 && (
+                        <div>
+                          ✓{" "}
+                          <span className="font-medium text-foreground">
+                            ${Math.round(preview.kpis.payrollMonthly).toLocaleString()}
+                          </span>{" "}
+                          payroll reviewed
+                        </div>
+                      )}
+                      <div>
+                        ✓{" "}
+                        <span className="font-medium text-foreground">
+                          {preview.anomalyRows.length}
+                        </span>{" "}
+                        flagged transactions
+                      </div>
+                      {preview.spendTrendsMonthly.length >= 2 && (
+                        <div>✓ Spend trend chart ({preview.spendTrendsMonthly.length} months)</div>
+                      )}
+                      <div>✓ {preview.recommendedActions.length} recommended actions</div>
+                      <div className="mt-1 text-[11px]">
+                        Period: {preview.periodLabel} · Source: {preview.sourceFiles.spend || preview.sourceFiles.payroll}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {monthlyPreview ? (
+                <div className="grid gap-2 text-sm">
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                      This report will include
+                    </div>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                      <li>Executive summary + KPIs</li>
+                      <li>Spend trend + top departments/vendors</li>
+                      <li>Flags/anomalies and recommended actions</li>
+                      <li>{monthlyPreview.payrollInsights?.length ? "Payroll insights (if available)" : "Payroll insights (if you upload payroll)"}</li>
+                    </ul>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <div className="rounded-xl border border-border/60 bg-background/60 p-3">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Spend</div>
+                      <div className="mt-1 text-base font-semibold tabular-nums">
+                        {fmtMoney(monthlyPreview.kpis.totalSpend || 0, monthlyPreview.currency || "USD")}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-background/60 p-3">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Payroll</div>
+                      <div className="mt-1 text-base font-semibold tabular-nums">
+                        {fmtMoney(monthlyPreview.kpis.payrollMonthly || 0, monthlyPreview.currency || "USD")}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-background/60 p-3">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Flags</div>
+                      <div className="mt-1 text-base font-semibold tabular-nums">
+                        {(monthlyPreview.kpis.flagsCount || 0).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground">
+                  Preview shows what will be inside the PDF before you download it.
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2">
-                <Button disabled={exportBusy} onClick={() => void exportMonthlyBoardPdfUpload()}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Monthly report (PDF)
+                <Button
+                  type="button"
+                  className="rounded-xl"
+                  disabled={previewBusy || monthlyBusy || busy}
+                  onClick={() => void buildMonthlyPreview()}
+                >
+                  {previewBusy ? "Building preview…" : monthlyPreview ? "Refresh preview" : "Preview Monthly Report"}
                 </Button>
                 <Button
-                  variant="secondary"
-                  disabled={exportBusy || !canXlsx}
-                  onClick={() => void exportMonthlyBoardXlsxUpload()}
+                  type="button"
+                  variant="outline"
+                  className="rounded-xl"
+                  disabled={monthlyBusy || busy || !monthlyPreview}
+                  onClick={() => void generateMonthlyPilotPdf()}
                 >
-                  <Download className="mr-2 h-4 w-4" />
-                  Excel summary (XLSX)
+                  {monthlyBusy ? "Generating…" : "Download PDF"}
                 </Button>
-                <Button variant="outline" disabled={exportBusy} onClick={() => void exportMonthlyAnomaliesCsvUpload()}>
+              </div>
+              {!canExportMonthlyUpload ? (
+                <div className="text-xs text-muted-foreground">
+                  Upload spend or payroll for more complete results, or widen the analytics date range in the app header.
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <details className="rounded-xl border border-border/60 bg-background/40 px-4 py-3">
+            <summary className="cursor-pointer select-none text-sm font-medium text-foreground/90">
+              More exports
+            </summary>
+            <div className="mt-3 grid gap-3">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" disabled={exportBusy} onClick={() => void exportEnterpriseExecutivePdf()}>
                   <Download className="mr-2 h-4 w-4" />
-                  CSV anomalies
+                  Executive PDF
+                </Button>
+                <Button variant="outline" disabled={exportBusy} onClick={() => void exportBoardPackPdf()}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Board Pack (PDF)
+                </Button>
+                <Button variant="secondary" disabled={exportBusy || !canXlsx} onClick={() => void exportExcelEnterprisePack()}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Summary Pack (XLSX)
+                </Button>
+                <Button variant="outline" disabled={exportBusy} onClick={() => void exportAlertsCsv()}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Alerts (CSV)
                 </Button>
               </div>
               <Separator />
               <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                 Analytics-engine PDFs
               </div>
-              <p className="text-xs text-muted-foreground">
-                Same upload scope as dashboards: KPI tables, jsPDF charts (trend + bars), findings, and recommendations.
-                Respects logo / charts / watermark toggles above.
-              </p>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" size="sm" variant="outline" className="rounded-xl" disabled={exportBusy} onClick={() => void exportIntelligencePdf("monthly_owner")}>
                   <FileDown className="mr-1.5 h-3.5 w-3.5" />
@@ -1463,12 +1622,8 @@ export default function ReportsPage() {
                   Cash Pressure
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                PDF uses branded cover, numbered sections, and optional watermark. Excel includes Cover, KPIs, trends,
-                department ranking, payroll narrative, risks, savings, forecast, actions, and full anomaly rows.
-              </p>
-            </>
-          )}
+            </div>
+          </details>
         </CardContent>
       </Card>
 

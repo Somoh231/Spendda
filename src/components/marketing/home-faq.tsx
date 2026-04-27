@@ -8,15 +8,15 @@ import { cn } from "@/lib/utils";
 const faqs = [
   {
     q: "What does Spendda do, in one sentence?",
-    a: "Spendda turns your spend and payroll files into governed dashboards, AI-assisted analysis, and board-ready reports — so finance can answer “what changed?” and “what do we do?” without another ERP project.",
+    a: "Spendda takes your spend and payroll files and turns them into clear insights and a monthly report — so you know what changed, what looks off, and what to do about it, without needing an accountant or analyst.",
   },
   {
     q: "Can we start without live accounting integrations?",
-    a: "Yes. Most teams begin with CSV or Excel uploads and a tenant workspace. Connectors for QuickBooks, Xero, payroll, and banking are architected for when you are ready to automate.",
+    a: "Yes — and most people do. Drop in a CSV or Excel export from QuickBooks, Gusto, Square, or any spreadsheet tool. Direct integrations are available when you are ready to automate.",
   },
   {
     q: "Who is Spendda built for?",
-    a: "Finance leaders, controllers, and audit-minded teams in SMEs, schools, NGOs, public-sector programs, and multi-site operators who need defensible numbers fast.",
+    a: "Business owners and operators who are too busy running their business to build financial reports manually — home care agencies, childcare centers, restaurants, retail shops, and any SME that needs clarity without hiring a finance team.",
   },
   {
     q: "How is our data handled?",
@@ -24,11 +24,11 @@ const faqs = [
   },
   {
     q: "What outcomes should we expect in the first 30 days?",
-    a: "A single source of truth for spend and payroll health, prioritized anomalies and savings signals, and executive narratives your leadership team can actually use — not another static spreadsheet archive.",
+    a: "Most users get their first report within 10 minutes of uploading. In 30 days you will have a clear view of your top vendors, your payroll trend, anything that looks unusual, and a monthly PDF you can share with your accountant or business partner.",
   },
   {
     q: "How does pricing work?",
-    a: "Starter, Growth, and Enterprise tiers scale with entities, modules, and support. Every serious buyer gets a short scoping call so packaging matches how you operate — see the pricing page for tier framing.",
+    a: "Starter is $99/month for one location. Growth is $249/month for multi-location businesses. Enterprise is custom for large organizations, NGOs, and public sector. Every plan starts with a free demo so you can see your own numbers before committing.",
   },
 ] as const;
 

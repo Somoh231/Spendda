@@ -34,17 +34,17 @@ const cardLink =
 const reveal = "motion-safe:animate-fade-in-up";
 
 const heroProof = [
-  { icon: Shield, text: "Tenant isolation and exports auditors can trace" },
-  { icon: Clock, text: "From file drop-in to exec storyline in one sitting" },
-  { icon: Target, text: "Less deck theater — more signal per dollar" },
+  { icon: Shield, text: "No accountant or IT person needed" },
+  { icon: Clock, text: "Works with QuickBooks, Gusto, Square, and Excel" },
+  { icon: Target, text: "First report ready in under 10 minutes" },
 ] as const;
 
-const logoPlaceholders = ["Finance orgs", "Multi-site", "Public sector", "Education", "NGOs", "Growth cos"] as const;
+const logoPlaceholders = ["Home care", "Childcare", "Restaurants", "SMEs", "NGOs", "Schools"] as const;
 
 const industrySolutions = [
   {
-    title: "SMEs",
-    body: "Payroll, supplier spend, cash visibility, and growth reporting without hiring another analyst bench.",
+    title: "Home care & childcare",
+    body: "Caregiver pay ratios, client billing gaps, subsidy payment delays, and cash runway — in one clear view.",
     icon: Factory,
     href: "/solutions",
   },
@@ -62,19 +62,19 @@ const industrySolutions = [
   },
   {
     title: "Finance & GRC teams",
-    body: "Investigations, exports, and AI Q&A scoped to the rows you authorize — not the whole internet.",
+    body: "Anomaly flags, vendor concentration, and executive summaries grounded in your uploaded ledgers — not demo placeholders.",
     icon: Briefcase,
     href: "/solutions",
   },
   {
     title: "Public sector",
-    body: "Accountability, audit trails, and briefings that survive scrutiny from oversight bodies.",
+    body: "Accountability, export trails, and briefings that survive scrutiny from oversight bodies.",
     icon: Landmark,
     href: "/solutions",
   },
   {
     title: "Multi-site operators",
-    body: "Entity workspaces, consolidated views, and drill-down that matches how you actually run.",
+    body: "Compare revenue, labor cost, and vendor spend across all your locations — see which one is underperforming and why.",
     icon: Building2,
     href: "/solutions",
   },
@@ -83,20 +83,20 @@ const industrySolutions = [
 const howSteps = [
   {
     step: "1",
-    title: "Ingest what you already have",
-    body: "Drop in CSV or Excel, or stage QuickBooks / payroll exports. Column mapping and health checks happen up front — no surprise garbage in dashboards.",
+    title: "Drop your file",
+    body: "CSV, Excel, QuickBooks export, or Gusto payroll. Column mapping and health checks happen automatically — no surprises in your results.",
     icon: Upload,
   },
   {
     step: "2",
-    title: "Let AI pressure-test the story",
-    body: "Surface anomalies, concentration, payroll pressure, and savings hypotheses with confidence-aware narratives tied to your data.",
+    title: "See what's actually happening",
+    body: "Vendors, payroll ratios, anomalies, and location gaps surfaced instantly — in plain English, not finance jargon.",
     icon: Sparkles,
   },
   {
     step: "3",
     title: "Ship decisions, not decks",
-    body: "Executive PDFs, XLSX packs, alerts, and action queues your CFO can defend in the next leadership meeting.",
+    body: "Monthly PDF report with your real numbers, top findings, and specific actions — ready to share with your accountant, partner, or investor.",
     icon: FileBarChart,
   },
 ] as const;
@@ -104,20 +104,23 @@ const howSteps = [
 const roiOutcomes = [
   {
     stat: "10×",
-    label: "Faster exec narrative",
-    detail: "From raw files to a first board-ready storyline — days, not six-week cycles.",
+    label: "Hours saved monthly",
+    detail:
+      "Stop rebuilding your financial summary from scratch every month — upload once and get your report instantly.",
     icon: TrendingUp,
   },
   {
     stat: "−35%",
-    label: "Less time in fire drills",
-    detail: "Fewer “what happened?” threads when spend, payroll, and risk live in one governed surface.",
+    label: "Earlier problem detection",
+    detail:
+      "Catch payroll drift, duplicate invoices, and billing gaps before they hit your bank account.",
     icon: Clock,
   },
   {
     stat: "100%",
     label: "Traceable to source rows",
-    detail: "Every chart and AI answer stays scoped to what you uploaded — built for serious buyers.",
+    detail:
+      "Every number in your report links back to the exact rows in your uploaded file — nothing is invented.",
     icon: Shield,
   },
 ] as const;
@@ -171,11 +174,11 @@ export default function Home() {
               </div>
               <div className="space-y-3">
                 <h1 className="max-w-[24ch] text-balance text-[2rem] font-semibold leading-[1.06] tracking-[-0.035em] text-white sm:text-4xl lg:text-[2.65rem] lg:leading-[1.04]">
-                  See risks early. Lead with confidence.
+                  Finally know which part of your business is making money and which part isn't.
                 </h1>
                 <p className="max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-slate-400 sm:text-lg">
-                  Spendda turns spend, payroll, and reporting into one intelligent workspace. Upload files, uncover risks,
-                  monitor performance, and generate decision-ready reports without enterprise complexity.
+                  Upload your QuickBooks export, payroll file, or any spreadsheet. Spendda tells you what changed, what's off,
+                  and what to do — in plain language.
                 </p>
               </div>
               <div className="flex flex-col gap-2.5 pt-0.5 sm:flex-row sm:flex-wrap">
@@ -183,14 +186,14 @@ export default function Home() {
                   href="/book-demo"
                   className="inline-flex h-11 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 to-blue-400 px-6 text-sm font-semibold text-white shadow-[0_14px_44px_rgba(37,99,235,0.38)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_18px_52px_rgba(37,99,235,0.48)]"
                 >
-                  Book a live walkthrough
+                  Try free demo →
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
                 <Link
                   href="/platform"
                   className="inline-flex h-11 items-center justify-center rounded-full border border-white/20 bg-white/[0.04] px-6 text-sm font-semibold text-white backdrop-blur transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/[0.08]"
                 >
-                  Explore the platform
+                  See how it works
                 </Link>
               </div>
               <ul className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap sm:gap-x-5 sm:gap-y-2">
@@ -216,7 +219,7 @@ export default function Home() {
         {/* 2 — Trusted by */}
         <section className={`border-y border-white/10 bg-white/[0.02] py-10 sm:py-12 ${reveal}`} style={{ animationDelay: "60ms" }}>
           <div className={`${shell} space-y-5`}>
-            <p className={`${label} text-center text-slate-500`}>Trusted by teams who cannot afford surprises</p>
+            <p className={`${label} text-center text-slate-500`}>Trusted by operators who cannot afford surprises</p>
             <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
               {logoPlaceholders.map((name) => (
                 <div
@@ -237,13 +240,13 @@ export default function Home() {
         <section className={`py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "80ms" }}>
           <div className={`${shell} space-y-7`}>
             <div className="mx-auto max-w-2xl space-y-2 text-center">
-              <p className={`${label} text-violet-400/90`}>Industry solutions</p>
+              <p className={`${label} text-violet-400/90`}>BUILT FOR THESE BUSINESSES</p>
               <h2 className="text-balance text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
-                Same platform. Different accountability profiles.
+                Built for the businesses that run on spreadsheets.
               </h2>
               <p className="text-sm leading-relaxed text-slate-400 sm:text-base">
-                Pick the lane that matches your organization — Spendda adapts entities, language, and reporting pressure
-                without forking the product.
+                Home care, childcare, restaurants, retail — Spendda adapts its language, metrics, and reports to match how
+                you actually run your business.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
@@ -279,10 +282,10 @@ export default function Home() {
             <div className="mx-auto max-w-2xl space-y-2 text-center">
               <p className={`${label} text-blue-400/90`}>How it works</p>
               <h2 className="text-balance text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
-                A straight line from messy files to defensible answers
+                Upload a file. Know your numbers in minutes.
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
-                No rip-and-replace ERP. You prove value on uploads first, then harden with integrations.
+                No rip-and-replace. No setup fees. You prove value on your first upload.
               </p>
             </div>
             <div className="grid gap-4 md:grid-cols-3 md:gap-5">
@@ -325,9 +328,9 @@ export default function Home() {
         <section className={`border-t border-white/10 py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "140ms" }}>
           <div className={`${shell} space-y-7`}>
             <div className="mx-auto max-w-2xl space-y-2 text-center">
-              <p className={`${label} text-amber-400/90`}>Outcomes finance measures</p>
+              <p className={`${label} text-amber-400/90`}>WHY OWNERS USE IT</p>
               <h2 className="text-balance text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
-                ROI that shows up in the calendar — not only in a slide deck
+                Less time on spreadsheets. More time running your business.
               </h2>
             </div>
             <div className="grid gap-4 md:grid-cols-3 md:gap-5">
@@ -347,7 +350,7 @@ export default function Home() {
               })}
             </div>
             <p className="text-center text-xs text-slate-500">
-              Illustrative benchmarks from pilot programs — your mileage depends on data quality and scope.
+              Based on pilot programs — results depend on data quality and how often you upload.
             </p>
           </div>
         </section>
@@ -362,7 +365,7 @@ export default function Home() {
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
                 Start with spreadsheets and exports. <span className="font-medium text-slate-200">Automate ingestion</span>{" "}
-                when procurement and IT are ready to sign off.
+                when vendor spend and IT are ready to sign off.
               </p>
             </div>
             <div className="mx-auto flex max-w-3xl flex-wrap justify-center gap-2">
@@ -431,7 +434,7 @@ export default function Home() {
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
                 Security narrative, privacy summary, SSO path, API placeholders, backups, and audit-ready controls — one
-                link for procurement.
+                link for vendor spend.
               </p>
               <div className="flex flex-wrap justify-center gap-2 pt-1">
                 <Link
@@ -465,7 +468,7 @@ export default function Home() {
             <div className="mx-auto max-w-2xl space-y-2 text-center">
               <p className={`${label} text-slate-500`}>FAQ</p>
               <h2 className="text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
-                Questions serious buyers ask first
+                Questions owners ask before signing up
               </h2>
             </div>
             <HomeFaq />
@@ -477,11 +480,10 @@ export default function Home() {
           <div className={`${shell} flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center`}>
             <div className="max-w-xl space-y-2">
               <h2 className="text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
-                If your next board meeting needs a sharper story, start here.
+                Stop guessing which part of your business is bleeding money.
               </h2>
               <p className="text-sm leading-relaxed text-slate-400 sm:text-base">
-                Book a walkthrough and we&apos;ll replay your spend and payroll reality — entities, risks, and reporting
-                gaps — in one sitting.
+                Upload your first file in under 5 minutes. No credit card required.
               </p>
             </div>
             <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row sm:gap-3">
@@ -489,13 +491,13 @@ export default function Home() {
                 href="/book-demo"
                 className="inline-flex h-11 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold text-slate-950 shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
               >
-                Schedule the walkthrough
+                Start free →
               </Link>
               <Link
                 href="/platform"
                 className="inline-flex h-11 items-center justify-center rounded-full border border-white/22 bg-white/[0.06] px-6 text-sm font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:border-white/32 hover:bg-white/[0.1]"
               >
-                Read the platform narrative
+                Book a demo
               </Link>
             </div>
           </div>

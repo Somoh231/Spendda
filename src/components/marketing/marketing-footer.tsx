@@ -44,12 +44,11 @@ export function MarketingFooter() {
               </span>
               <div>
                 <div className="text-sm font-semibold text-white">Spendda</div>
-                <div className="text-xs text-slate-500">Operational finance, venture-ready</div>
+                <div className="text-xs text-slate-500">Financial clarity for businesses that run on spreadsheets.</div>
               </div>
             </div>
             <p className="mt-3 max-w-sm text-sm leading-relaxed text-slate-400">
-              Turn uploads into decisions: anomalies, forecasts, and board-ready exports—without rebuilding everything in
-              Excel every quarter.
+              Upload your files. See what's happening. Get your monthly report. No finance team required.
             </p>
           </div>
           {cols.map((c) => (

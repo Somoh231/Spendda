@@ -452,24 +452,103 @@ export function OnboardingWizard() {
                   Choose a storyline that matches your buyer conversation—sector naming, seeded alerts, and benchmark
                   tone shift instantly (and coexist with real uploads when you add them).
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {DEMO_PACKS.map((p) => (
+                {(() => {
+                  const US_IDS = new Set(["home-care-us", "childcare-us", "restaurant-us", "sme-us"]);
+                  const us = DEMO_PACKS.filter((p) => US_IDS.has(p.id));
+                  const inst = DEMO_PACKS.filter((p) => !US_IDS.has(p.id));
+                  const tagFor = (id: string) =>
+                    id === "home-care-us"
+                      ? { text: "Home Care", cls: "bg-blue-500/15 text-blue-100 border-blue-400/30" }
+                      : id === "childcare-us"
+                        ? { text: "Childcare", cls: "bg-emerald-500/15 text-emerald-100 border-emerald-400/30" }
+                        : id === "restaurant-us"
+                          ? { text: "Restaurant", cls: "bg-orange-500/15 text-orange-100 border-orange-400/30" }
+                          : { text: "Small Business", cls: "bg-purple-500/15 text-purple-100 border-purple-400/30" };
+                  const bulletsFor = (id: string) =>
+                    id === "home-care-us"
+                      ? [
+                          "Payroll running at 67% of revenue — above 60% target",
+                          "$14,200 in overdue client invoices",
+                          "Evening shift overtime up 18% this month",
+                        ]
+                      : id === "childcare-us"
+                        ? [
+                            "Center 2 staff cost per child 22% above Center 1",
+                            "$8,400 in subsidy payments delayed 30+ days",
+                            "Part-time hours spiked last week — review scheduling",
+                          ]
+                        : id === "restaurant-us"
+                          ? [
+                              "Airport location 24% below group average revenue",
+                              "Labor cost at 36% — above 30% benchmark at Westside",
+                              "Duplicate invoice from food supplier — $1,240",
+                            ]
+                          : [
+                              "Top 3 vendors = 61% of all spend",
+                              "Payroll up 11% vs same month last year",
+                              "2 potential duplicate payments flagged",
+                            ];
+
+                  const Card = ({ p, warm }: { p: (typeof DEMO_PACKS)[number]; warm?: boolean }) => (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => setDemoPackId(p.id)}
                       className={[
                         "rounded-2xl border px-3 py-3 text-left text-sm transition-all",
-                        demoPackId === p.id
-                          ? "border-blue-400/30 bg-blue-500/10"
-                          : "border-white/10 bg-white/5 hover:bg-white/[0.07]",
+                        warm ? "bg-amber-50/30 dark:bg-amber-950/20 border-amber-500/20" : "border-white/10 bg-white/5 hover:bg-white/[0.07]",
+                        demoPackId === p.id ? "ring-1 ring-blue-400/25" : "",
                       ].join(" ")}
                     >
-                      <div className="font-semibold text-white">{p.label}</div>
-                      <div className="mt-1 text-xs leading-5 text-slate-400">{p.description}</div>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-white">{p.label}</div>
+                          <div className="mt-1 text-xs leading-5 text-slate-400">{p.description}</div>
+                        </div>
+                        {warm ? (
+                          <span className={["shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold", tagFor(p.id).cls].join(" ")}>
+                            {tagFor(p.id).text}
+                          </span>
+                        ) : null}
+                      </div>
+                      {warm ? (
+                        <ul className="mt-2 space-y-1 text-xs text-slate-300">
+                          {bulletsFor(p.id).map((b) => (
+                            <li key={b}>• {b}</li>
+                          ))}
+                        </ul>
+                      ) : null}
                     </button>
-                  ))}
-                </div>
+                  );
+
+                  return (
+                    <div className="grid gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-px flex-1 bg-white/10" />
+                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">🇺🇸 US Business Demos</div>
+                        <div className="h-px flex-1 bg-white/10" />
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {us.map((p) => (
+                          <Card key={p.id} p={p} warm />
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-3 pt-2">
+                        <div className="h-px flex-1 bg-white/10" />
+                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                          🌍 Public Sector & Institutional Demos
+                        </div>
+                        <div className="h-px flex-1 bg-white/10" />
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {inst.map((p) => (
+                          <Card key={p.id} p={p} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 lg:col-span-3">

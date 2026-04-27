@@ -13,6 +13,39 @@ export type DemoPackMeta = {
 
 export const DEMO_PACKS: DemoPackMeta[] = [
   {
+    id: "home-care-us",
+    label: "Sunrise Home Care Agency",
+    description:
+      "24 caregivers, 38 active clients. Payroll running above target, overdue invoices, overtime patterns.",
+    organizationName: "Sunrise Home Care",
+    seedOffset: 112,
+    sector: "Healthcare",
+  },
+  {
+    id: "childcare-us",
+    label: "Bright Futures Childcare",
+    description: "3-center childcare group. Staff ratios, subsidy billing gaps, payroll by center.",
+    organizationName: "Bright Futures Childcare",
+    seedOffset: 127,
+    sector: "Education",
+  },
+  {
+    id: "restaurant-us",
+    label: "Mesa Verde Kitchen (3 locations)",
+    description: "Downtown, Westside, Airport. Labor cost %, location comparison, duplicate vendor invoice.",
+    organizationName: "Mesa Verde Kitchen",
+    seedOffset: 134,
+    sector: "Private Sector",
+  },
+  {
+    id: "sme-us",
+    label: "Oakwood Services LLC",
+    description: "12-person service business. Vendor concentration, payroll trend, duplicate payment flags.",
+    organizationName: "Oakwood Services LLC",
+    seedOffset: 156,
+    sector: "Private Sector",
+  },
+  {
     id: "default",
     label: "Default accountability dataset",
     description: "Balanced multi-ministry / multi-region public finance demo.",

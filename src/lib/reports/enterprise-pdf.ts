@@ -217,7 +217,18 @@ function drawCover(
   doc.setTextColor(15, 23, 42);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
-  const title = variant === "board" ? "Board Pack" : "Executive Brief";
+  const industryTitle = {
+    "Home Care Agency": variant === "board" ? "Home Care Monthly Report" : "Care Operations Brief",
+    "Childcare Center": variant === "board" ? "Childcare Monthly Report" : "Center Operations Brief",
+    "Restaurant Group": variant === "board" ? "Restaurant Monthly Report" : "Location Performance Brief",
+    SME: variant === "board" ? "Monthly Business Report" : "Business Performance Brief",
+  };
+  const title =
+    opts.orgType && industryTitle[opts.orgType as keyof typeof industryTitle]
+      ? industryTitle[opts.orgType as keyof typeof industryTitle]
+      : variant === "board"
+        ? "Board Pack"
+        : "Executive Brief";
   doc.text(title, 56, 270);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(12);
@@ -328,16 +339,26 @@ export async function buildEnterprisePdfBlob(
   y = drawSectionTitle(doc, "3. Alerts & investigations", y + 6);
   y = wrapParagraph(doc, narrative.alertsNarrative, 48, y, pageW - 96, 14);
   const high = bundle.flags.filter((f) => f.severity === "High").slice(0, 12);
-  const alertRows = high.map((f) => {
-    const meta = bundle.investigations[f.id];
-    return [
-      f.title.slice(0, 40),
-      f.severity,
-      meta?.owner ?? "Unassigned",
-      meta?.dueDate ?? "—",
-      meta?.status ?? "Open",
-    ];
-  });
+  const seen = new Set<string>();
+  const alertRows = high
+    .map((f) => {
+      const meta = bundle.investigations[f.id];
+      // Deduplicate by title — show count instead of repeating rows
+      const baseTitle = f.title.slice(0, 40);
+      return [baseTitle, f.severity, meta?.owner ?? "Unassigned", meta?.dueDate ?? "—", meta?.status ?? "Open"];
+    })
+    .filter((row) => {
+      const key = row[0];
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  // Add a summary line if there were duplicates
+  const totalHigh = bundle.flags.filter((f) => f.severity === "High").length;
+  if (totalHigh > alertRows.length) {
+    alertRows.push([`+ ${totalHigh - alertRows.length} additional similar flags`, "High", "—", "—", "Open"]);
+  }
   if (opts.includeRawTables) {
     y = drawTable(
       doc,

@@ -6,6 +6,10 @@ import { CLIENT_COOKIE, decodeClientSession } from "@/lib/auth/client-cookie";
 import { cookies } from "next/headers";
 
 const DEMO_PACK_IDS = [
+  "home-care-us",
+  "childcare-us",
+  "restaurant-us",
+  "sme-us",
   "default",
   "liberia-mof",
   "east-africa-university",
@@ -14,7 +18,18 @@ const DEMO_PACK_IDS = [
 ] as const;
 
 const schema = z.object({
-  orgType: z.enum(["Government", "Private Company", "University", "NGO", "Hospital", "Bank"]),
+  orgType: z.enum([
+    "Government",
+    "Private Company",
+    "University",
+    "NGO",
+    "Hospital",
+    "Bank",
+    "Home Care Agency",
+    "Childcare Center",
+    "Restaurant Group",
+    "SME",
+  ]),
   marketType: z.enum(["Emerging Market", "Developed Market"]),
   orgSize: z.enum(["Small", "Mid-size", "Large", "Multi-entity"]),
   primaryGoals: z.array(

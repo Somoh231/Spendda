@@ -4,7 +4,11 @@ export type OrgType =
   | "University"
   | "NGO"
   | "Hospital"
-  | "Bank";
+  | "Bank"
+  | "Home Care Agency"
+  | "Childcare Center"
+  | "Restaurant Group"
+  | "SME";
 
 export type MarketType = "Emerging Market" | "Developed Market";
 
@@ -27,7 +31,11 @@ export type DemoPackId =
   | "liberia-mof"
   | "east-africa-university"
   | "mercy-regional-hospital"
-  | "global-ngo-relief";
+  | "global-ngo-relief"
+  | "home-care-us"
+  | "childcare-us"
+  | "restaurant-us"
+  | "sme-us";
 
 /** Primary industry lens for analytics, external intelligence, and reporting. */
 export const INDUSTRY_SEGMENTS = [
@@ -37,11 +45,19 @@ export const INDUSTRY_SEGMENTS = [
   "Education & research",
   "Nonprofit & NGOs",
   "Private sector (general)",
+  "Home care & senior services",
+  "Childcare & early education",
+  "Food & beverage",
+  "Small business (general)",
 ] as const;
 export type IndustrySegment = (typeof INDUSTRY_SEGMENTS)[number];
 
 /** Primary operating jurisdiction / macro region (coarse). */
 export const OPERATING_LOCATIONS = [
+  "United States — Home Care",
+  "United States — Childcare",
+  "United States — Restaurant",
+  "United States — SME",
   "United States",
   "European Union / UK",
   "West Africa",

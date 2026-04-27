@@ -6,29 +6,34 @@ import { MarketingNav } from "@/components/marketing/marketing-nav";
 
 const segments = [
   {
-    icon: GraduationCap,
-    title: "Schools & districts",
-    body: "Multi-campus visibility, grant-aligned spend, and payroll anomaly detection with evidence owners.",
+    icon: Users,
+    title: "Home care & childcare",
+    body: "Caregiver pay ratios, client billing gaps, subsidy payment delays, and cash runway — in one clear view.",
   },
   {
-    icon: Users,
-    title: "Daycares & care networks",
-    body: "Staffing ratios, payroll consistency, and vendor spend tied to compliance-sensitive categories.",
+    icon: GraduationCap,
+    title: "Schools & districts",
+    body: "Campus-level budgets, vendor contracts, and payroll variance with rollups leadership can trust.",
   },
   {
     icon: HeartHandshake,
     title: "NGOs & foundations",
-    body: "Donor reporting, field-office burn, and duplicate-payment controls across programs.",
+    body: "Grant-aligned reporting and donor-grade transparency without losing operational speed.",
   },
   {
     icon: Building2,
-    title: "Finance teams & shared services",
-    body: "Month-end acceleration: flags, investigations, and executive briefs grounded in your ledgers.",
+    title: "Finance & GRC teams",
+    body: "Anomaly flags, vendor concentration, and executive summaries grounded in your uploaded ledgers — not demo placeholders.",
   },
   {
     icon: Landmark,
     title: "Public sector",
-    body: "Transparency-ready narratives, concentration risk, and procurement oversight for ministries and regions.",
+    body: "Accountability, export trails, and briefings that survive scrutiny from oversight bodies.",
+  },
+  {
+    icon: Building2,
+    title: "Multi-site operators",
+    body: "Compare revenue, labor cost, and vendor spend across all your locations — see which one is underperforming and why.",
   },
 ] as const;
 
@@ -40,11 +45,11 @@ export default function SolutionsPage() {
       <main className="mx-auto max-w-7xl px-4 pb-24 pt-12 sm:px-6 lg:px-8 lg:pt-16">
         <p className="text-sm font-semibold text-blue-300">Solutions</p>
         <h1 className="mt-3 max-w-3xl text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-          Built for teams who cannot afford blind spots
+          Built for the businesses that run on spreadsheets.
         </h1>
         <p className="mt-5 max-w-2xl text-lg leading-relaxed text-slate-400">
-          Whether you run a school system, care network, NGO, or public finance shop — Spendda connects spend and payroll
-          signals into decisions your board and donors can trust.
+          Home care, childcare, restaurants, retail — Spendda adapts its language, metrics, and reports to match how you
+          actually run your business.
         </p>
         <div className="mt-10 flex flex-wrap gap-3">
           <Link

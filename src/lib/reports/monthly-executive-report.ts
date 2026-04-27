@@ -85,6 +85,7 @@ export function buildMonthlyExecutiveReportFromUpload(opts: {
   range: DateRange;
   spendDataset: WorkspaceDataset | null;
   payrollDataset: WorkspaceDataset | null;
+  orgType?: string;
 }): MonthlyExecutiveReport | null {
   const spendRowsAll = opts.spendDataset?.kind === "spend" ? (opts.spendDataset.rows as SpendTxn[]) : [];
   const payrollRows = opts.payrollDataset?.kind === "payroll" ? (opts.payrollDataset.rows as PayrollRow[]) : [];
@@ -198,10 +199,36 @@ export function buildMonthlyExecutiveReportFromUpload(opts: {
     nextPeriodText = `Projected next buckets (linear on uploads): ${analytics.forecastNext.nextMonths.map((m) => `${m.label} $${Math.round(m.projected).toLocaleString()}`).join(" · ")}.`;
   }
 
-  const recommendedActions = [...analytics.recommendations];
+  const industryActions: Record<string, string[]> = {
+    "Home Care Agency": [
+      "Review caregiver overtime — check if evening shift staffing can be rebalanced",
+      "Chase overdue client invoices before next payroll cycle",
+      "Confirm Medicaid reimbursement submissions are up to date",
+    ],
+    "Childcare Center": [
+      "Verify staff-to-child ratios are within state licensing requirements",
+      "Follow up on delayed subsidy payments",
+      "Review part-time scheduling for cost efficiency",
+    ],
+    "Restaurant Group": [
+      "Investigate underperforming location — compare labor scheduling vs revenue",
+      "Review food vendor invoices for duplicates or price drift",
+      "Set labor cost % target per location and track weekly",
+    ],
+    SME: [
+      "Review top 3 vendors for contract alignment and renewal dates",
+      "Confirm there are no duplicate or recurring payments to investigate",
+      "Compare this month's payroll % to your 3-month average",
+    ],
+  };
+
+  const baseActions =
+    opts.orgType && industryActions[opts.orgType] ? industryActions[opts.orgType] : [...analytics.recommendations];
+
+  const recommendedActions = [...baseActions];
   if (flags.filter((f) => f.severity === "High").length) {
     recommendedActions.unshift(
-      `Triage **${flags.filter((f) => f.severity === "High").length}** high-severity upload flags in Alerts before month-end close.`,
+      `Triage **${flags.filter((f) => f.severity === "High").length}** high-severity flags before month-end close.`,
     );
   }
 

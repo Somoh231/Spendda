@@ -72,13 +72,42 @@ function genMsgId() {
   }
 }
 
-const SUGGESTED = [
-  "What looks suspicious?",
-  "Summarize",
-  "Top vendors by spend",
-  "Payroll anomalies",
-  "Forecast next quarter",
-];
+function getSuggestedQuestions(orgType?: string): string[] {
+  switch (orgType) {
+    case "Home Care Agency":
+      return [
+        "What's my payroll % of revenue?",
+        "Which clients have overdue invoices?",
+        "Show caregiver overtime patterns",
+        "How's my cash runway?",
+        "Generate monthly report",
+      ];
+    case "Childcare Center":
+      return [
+        "What's my cost per enrolled child?",
+        "Are any subsidy payments delayed?",
+        "Show staff cost by center",
+        "Any scheduling anomalies?",
+        "Generate monthly report",
+      ];
+    case "Restaurant Group":
+      return [
+        "Compare my locations",
+        "What's my labor cost %?",
+        "Any duplicate vendor invoices?",
+        "Which location is underperforming?",
+        "Generate monthly report",
+      ];
+    default:
+      return [
+        "What are my top vendors by spend?",
+        "Is my payroll % healthy?",
+        "Show me anything suspicious",
+        "What changed vs last month?",
+        "Generate monthly report",
+      ];
+  }
+}
 
 const AFTER_UPLOAD = ["Why did payroll rise?", "Show duplicate payments", "Build monthly report"];
 
@@ -351,6 +380,19 @@ async function sleep(ms: number) {
   await new Promise((r) => window.setTimeout(r, ms));
 }
 
+function spendDateRange(rows: SpendTxn[] | null | undefined): { from: string | null; to: string | null } {
+  if (!rows?.length) return { from: null, to: null };
+  let from: string | null = null;
+  let to: string | null = null;
+  rows.forEach((r) => {
+    const d = (r.date || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    if (!from || d < from) from = d;
+    if (!to || d > to) to = d;
+  });
+  return { from, to };
+}
+
 export function AiWorkspaceApp() {
   const router = useRouter();
   const pathname = usePathname();
@@ -380,7 +422,8 @@ export function AiWorkspaceApp() {
       id: genMsgId(),
       role: "assistant",
       content:
-        "I’ll keep replies tight unless you ask to go deeper. **Hello** is fine; for numbers, try **summarize** or **what looks suspicious** — or drop **CSV / XLSX** on the composer (drag works anywhere in the chat).",
+        "Upload a CSV or Excel file and I'll give you specific answers based on your real data — top vendors, payroll ratios, anomalies, and more. You can drag a file anywhere onto this chat, or use the paperclip button below.",
+      followUps: ["How does this work?", "What file formats work?", "Show me an example"],
     },
   ]);
   const [q, setQ] = React.useState("");
@@ -565,10 +608,10 @@ export function AiWorkspaceApp() {
     const parsed = await parseUploadFile(file);
     if (!parsed.ok) return { ok: false, error: parsed.error };
     const detected = describeIngestKind(parsed.rows);
-    const insight = ingestWorkspaceUpload(parsed.rows, parsed.filename, entity);
-    const dataset = ingestWorkspaceDataset(parsed.rows, parsed.filename, entity);
-    upsertWorkspaceDataset(dataset, clientId);
-    upsertUploadedInsights(insight, clientId);
+    const ingested = ingestWorkspaceUpload(parsed.rows, parsed.filename, entity, undefined, parsed.quality.warnings);
+    const ds = ingestWorkspaceDataset(parsed.rows, parsed.filename, entity, undefined, parsed.quality.warnings);
+    upsertWorkspaceDataset(ds.dataset, clientId);
+    upsertUploadedInsights(ingested.insight, clientId);
 
     // Best-effort cloud metadata persistence (multi-tenant, no UI changes).
     try {
@@ -586,15 +629,15 @@ export function AiWorkspaceApp() {
       });
       const metaJson = (await metaRes.json().catch(() => ({}))) as { ok?: boolean; id?: string };
       if (metaRes.ok && metaJson.ok && metaJson.id) {
-        if (dataset.kind === "spend") {
+        if (ds.dataset.kind === "spend") {
           await ingestSpendRowsToCloud({
             sourceUploadId: metaJson.id,
-            rows: dataset.rows as SpendTxn[],
+            rows: ds.dataset.rows as SpendTxn[],
           });
         } else {
           await ingestPayrollRowsToCloud({
             sourceUploadId: metaJson.id,
-            rows: dataset.rows as PayrollRow[],
+            rows: ds.dataset.rows as PayrollRow[],
           });
         }
       }
@@ -605,8 +648,8 @@ export function AiWorkspaceApp() {
       ok: true,
       filename: parsed.filename,
       detected,
-      spendDs: dataset.kind === "spend" ? dataset : null,
-      payrollDs: dataset.kind === "payroll" ? dataset : null,
+      spendDs: ds.dataset.kind === "spend" ? ds.dataset : null,
+      payrollDs: ds.dataset.kind === "payroll" ? ds.dataset : null,
       rowCount: parsed.rows.length,
     };
   }
@@ -774,6 +817,30 @@ export function AiWorkspaceApp() {
       const spendDs = datasetOverride?.spend ?? merged.spend;
       const payrollDs = datasetOverride?.payroll ?? merged.payroll;
       const entityForAi = datasetOverride ? entity : merged.scopeLabel;
+
+      if (!spendDs && !payrollDs && workspace.dataSource !== "demo") {
+        const content =
+          "I don't have any uploaded data to analyze yet. Upload a CSV or Excel file \nusing the dropzone above, and I'll give you specific answers based on your \nactual numbers — vendor breakdown, payroll ratios, anomalies, and more.";
+        setMsgs((prev) => {
+          const next = prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content,
+                  followUps: ["Upload a file", "How does this work?", "What file formats work?"],
+                  streaming: false,
+                  typing: false,
+                }
+              : m,
+          );
+          persistSession(next);
+          return next;
+        });
+        setQ("");
+        requestAnimationFrame(() => textareaRef.current?.focus());
+        return;
+      }
+
       const uploadPilot = buildUploadPilotSnapshot({
         dataSource: workspace.dataSource,
         entity: entityForAi,
@@ -1103,7 +1170,12 @@ export function AiWorkspaceApp() {
             </div>
             <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground sm:text-xs">
               <span className="truncate" title={workspace.activeDatasetLabel || undefined}>
-                <span className="font-medium text-foreground/85">Data:</span> {workspace.activeDatasetLabel || "—"}
+                <span className="font-medium text-foreground/85">Data:</span>{" "}
+                {workspace.dataSource === "upload" && workspace.activeDatasetLabel
+                  ? `📊 ${workspace.activeDatasetLabel}`
+                  : workspace.dataSource === "demo"
+                    ? "🎭 Demo data — upload your file for real numbers"
+                    : "⚠️ No data — upload a CSV or Excel file to begin"}
               </span>
               <span className="hidden sm:inline">·</span>
               <span className="truncate">
@@ -1155,9 +1227,11 @@ export function AiWorkspaceApp() {
         >
           {!hasDataset ? (
             <div className="mx-auto flex max-w-lg flex-col items-center gap-4 py-6 text-center">
-              <p className="text-base font-semibold tracking-tight">Upload to unlock full analysis</p>
+              <p className="text-base font-semibold tracking-tight">Upload a file to get real answers</p>
               <p className="text-sm text-muted-foreground">
-                CSV, Excel, or QuickBooks-style exports. You can also attach from the composer below.
+                Drop a CSV or Excel export from QuickBooks, Gusto, Square, or any spreadsheet.
+                I'll give you specific numbers — vendors, payroll ratios, anomalies — based on
+                your actual data.
               </p>
               <div className="w-full rounded-2xl border border-dashed border-primary/25 bg-muted/10 p-4">
                 <FileDropzone
@@ -1394,7 +1468,7 @@ export function AiWorkspaceApp() {
           <div className="mx-auto w-full max-w-[min(100%,720px)] px-3 sm:px-5">
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Suggestions</p>
             <div className="-mx-0.5 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
-              {SUGGESTED.map((p) => (
+              {getSuggestedQuestions(profile?.orgType).map((p) => (
                 <button
                   key={p}
                   type="button"

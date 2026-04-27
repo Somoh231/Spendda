@@ -294,15 +294,19 @@ export function answerFromDataset(opts: {
     if (runFinance) {
       return {
         text:
-          `No **spend or payroll** file in scope for **${entity}** yet — I won’t invent KPIs.\n\n` +
-          `Upload **CSV/XLSX**, then ask again.`,
+          `I don't have any data to work with yet for **${entity}**.\n\n` +
+          `Upload a CSV or Excel file — spend export, payroll report, or QuickBooks export — ` +
+          `and I'll give you specific answers: top vendors, payroll ratios, anomalies, and more.\n\n` +
+          `I won't invent numbers without real data.`,
         kind: "empty" as const,
         meta: { sources, confidencePct: 0, mode: "local" as const },
       };
     }
     return {
       kind: "chat_conversational" as const,
-      text: "I don’t have a file in this scope yet — upload when you’re ready, or just chat in the meantime.",
+      text:
+        `No data uploaded yet. Drop a CSV or Excel file onto the chat and I'll analyze it — ` +
+        `vendor breakdown, payroll health, anomalies, whatever you need.`,
       meta: { sources, confidencePct: 0, mode: "local" as const },
     };
   }

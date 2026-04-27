@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Activity,
   CheckCircle2,
@@ -24,6 +25,8 @@ import {
   getDefaultUploadMaps,
   ingestWorkspaceDataset,
   ingestWorkspaceUpload,
+  ingestWorkspaceUploadWithSummary,
+  type IngestSummary,
   type PayrollMapping,
   type SpendMapping,
 } from "@/lib/upload/workspace-ingest";
@@ -58,6 +61,149 @@ const ACCEPT =
   ".csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv";
 
 const FORMAT_LABELS = [".csv (UTF-8)", ".xlsx", ".xls"] as const;
+
+const UPLOAD_STEPS = ["Upload", "Parse", "Analyze", "Done"] as const;
+
+function UploadStepIndicator({ stage }: { stage: "idle"|"selected"|"uploading"|"parsing"|"analyzing"|"success"|"error" }) {
+  const stepIndex =
+    stage === "uploading" ? 0 :
+    stage === "parsing" ? 1 :
+    stage === "analyzing" ? 2 :
+    stage === "success" ? 3 : -1;
+
+  if (stepIndex === -1) return null;
+
+  return (
+    <div className="flex items-center justify-center gap-1 py-2">
+      {UPLOAD_STEPS.map((step, i) => (
+        <React.Fragment key={step}>
+          <div className="flex flex-col items-center gap-1">
+            <div className={cn(
+              "flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold transition-colors",
+              i < stepIndex ? "bg-primary text-primary-foreground" :
+              i === stepIndex ? "bg-primary text-primary-foreground ring-2 ring-primary/30 ring-offset-1" :
+              "bg-muted text-muted-foreground"
+            )}>
+              {i < stepIndex ? "✓" : i + 1}
+            </div>
+            <span className={cn(
+              "text-[9px] font-medium",
+              i <= stepIndex ? "text-foreground" : "text-muted-foreground"
+            )}>{step}</span>
+          </div>
+          {i < UPLOAD_STEPS.length - 1 && (
+            <div className={cn(
+              "mb-4 h-px w-8 transition-colors",
+              i < stepIndex ? "bg-primary" : "bg-border"
+            )} />
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+function UploadSuccessCard({
+  summary,
+  onAskAI
+}: {
+  summary: {
+    rowsIngested: number;
+    kind: "spend" | "payroll";
+    totalAmount: number;
+    topVendors: string[];
+    dateRange: { from: string | null; to: string | null };
+    warnings: string[];
+  };
+  onAskAI: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-950/30">
+      <div className="flex items-start gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
+          ✓
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+            {summary.rowsIngested.toLocaleString()} rows ingested
+          </p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">
+            Detected: {summary.kind === "spend" ? "Spend / expense data" : "Payroll data"}
+          </p>
+
+          {summary.totalAmount > 0 && (
+            <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
+              Total: ${Math.round(summary.totalAmount).toLocaleString()}
+            </p>
+          )}
+
+          {summary.topVendors.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Top vendors: {summary.topVendors.join(", ")}
+            </p>
+          )}
+
+          {(summary.dateRange.from || summary.dateRange.to) && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Date range: {summary.dateRange.from ?? "?"} → {summary.dateRange.to ?? "?"}
+            </p>
+          )}
+
+          {summary.warnings.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {summary.warnings.map((w) => (
+                <p key={w} className="text-[11px] text-amber-700 dark:text-amber-400">
+                  ⚠️ {w}
+                </p>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={onAskAI}
+            className="mt-3 w-full rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
+          >
+            Ask AI about this data →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatMonthRange(r: { from: string | null; to: string | null }) {
+  const from = r.from;
+  const to = r.to;
+  if (!from && !to) return null;
+  const fmt = (iso: string) => {
+    const d = new Date(`${iso}T00:00:00Z`);
+    if (!Number.isFinite(d.getTime())) return iso;
+    return d.toLocaleString(undefined, { month: "short", year: "numeric" });
+  };
+  if (from && to) return `${fmt(from)} – ${fmt(to)}`;
+  if (from) return `From ${fmt(from)}`;
+  return `Up to ${fmt(to as string)}`;
+}
+
+type UploadWorkflowStage = "idle" | "selected" | "uploading" | "parsing" | "analyzing" | "success" | "error";
+
+function stageToStep(stage: UploadWorkflowStage): 0 | 1 | 2 | 3 {
+  if (stage === "idle" || stage === "selected") return 0;
+  if (stage === "uploading" || stage === "parsing") return 1;
+  if (stage === "analyzing") return 2;
+  return 3;
+}
+
+function stageLabel(stage: UploadWorkflowStage) {
+  if (stage === "idle") return "Upload";
+  if (stage === "selected") return "Upload";
+  if (stage === "uploading") return "Upload";
+  if (stage === "parsing") return "Parse";
+  if (stage === "analyzing") return "Analyze";
+  if (stage === "success") return "Done";
+  return "Error";
+}
 
 const SPEND_FIELDS: { key: keyof SpendMapping; label: string }[] = [
   { key: "date", label: "Date" },
@@ -117,6 +263,7 @@ export type PremiumUploadExperienceProps = {
 };
 
 export function PremiumUploadExperience({ entity, clientId, className }: PremiumUploadExperienceProps) {
+  const router = useRouter();
   const inputRef = React.useRef<HTMLInputElement>(null);
   const replaceInputRef = React.useRef<HTMLInputElement>(null);
   const queueReplaceInputRef = React.useRef<HTMLInputElement>(null);
@@ -127,7 +274,7 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
     file: File;
     status: "queued" | "parsing" | "parsed" | "error" | "imported";
     error?: string;
-    parsed?: { rows: CsvRow[]; filename: string };
+    parsed?: { rows: CsvRow[]; filename: string; warnings?: string[] };
     kind?: "spend" | "payroll";
     rowCount?: number;
     columnCount?: number;
@@ -146,13 +293,27 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
   const [replaceQueueId, setReplaceQueueId] = React.useState<string | null>(null);
   const [parsingFileId, setParsingFileId] = React.useState<string | null>(null);
   const [historyLog, setHistoryLog] = React.useState<UploadHistoryEntry[]>([]);
+  const [ingestSummary, setIngestSummary] = React.useState<IngestSummary | null>(null);
   const [lastSuccess, setLastSuccess] = React.useState<{
     filename: string;
     kind: "spend" | "payroll";
-    rows: number;
-    columns: number;
-    fieldsDetected: string;
+    rowsIngested: number;
+    detectedLabel: string;
+    topVendors: string[];
+    dateRange: { from: string | null; to: string | null };
+    warnings: string[];
   } | null>(null);
+
+  const workflowStage: UploadWorkflowStage = lastSuccess
+    ? "success"
+    : commitProgress > 0
+      ? "analyzing"
+      : parsingFileId
+        ? "parsing"
+        : queue.some((q) => q.status === "queued")
+          ? "selected"
+          : "idle";
+  const activeStep = stageToStep(workflowStage);
 
   const active = queue.find((q) => q.id === activeId) || null;
 
@@ -183,6 +344,7 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
     }));
     setQueue((q) => [...q, ...next].slice(0, 20));
     setLastSuccess(null);
+    setIngestSummary(null);
   }
 
   function removeQueued(id: string) {
@@ -217,7 +379,7 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
             ? {
                 ...x,
                 status: "parsed" as const,
-                parsed: { rows: parsed.rows, filename: parsed.filename },
+                parsed: { rows: parsed.rows, filename: parsed.filename, warnings: parsed.quality.warnings },
                 kind: maps.kind,
                 rowCount: parsed.rows.length,
                 columnCount: maps.headers.length,
@@ -271,9 +433,11 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
         active.kind === "payroll"
           ? { payrollOverrides }
           : { spendOverrides };
-      const insight = ingestWorkspaceUpload(active.parsed.rows, active.parsed.filename, entity, overrides);
-      const dataset = ingestWorkspaceDataset(active.parsed.rows, active.parsed.filename, entity, overrides);
-      upsertWorkspaceDataset(dataset, clientId);
+      const warnings = active.parsed.warnings || [];
+      const [insight, summary] = ingestWorkspaceUploadWithSummary(active.parsed.rows, active.parsed.filename, entity, overrides, warnings);
+      setIngestSummary(summary);
+      const ds = ingestWorkspaceDataset(active.parsed.rows, active.parsed.filename, entity, overrides, warnings);
+      upsertWorkspaceDataset(ds.dataset, clientId);
       upsertUploadedInsights(insight, clientId);
 
       // Best-effort cloud metadata persistence (tenant-scoped). UI remains unchanged.
@@ -295,8 +459,8 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
         const metaJson = (await metaRes.json().catch(() => ({}))) as { ok?: boolean; id?: string };
         if (metaRes.ok && metaJson.ok && metaJson.id) {
           const chunkSize = 800;
-          if (dataset.kind === "spend") {
-            const rows = dataset.rows as {
+          if (ds.dataset.kind === "spend") {
+            const rows = ds.dataset.rows as {
               date?: string;
               vendor?: string;
               amount?: number;
@@ -324,7 +488,7 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
               });
             }
           } else {
-            const rows = dataset.rows as { employeeName?: string; salaryCurrent?: number; department?: string }[];
+            const rows = ds.dataset.rows as { employeeName?: string; salaryCurrent?: number; department?: string }[];
             for (let i = 0; i < rows.length; i += chunkSize) {
               const chunk = rows.slice(i, i + chunkSize);
               // eslint-disable-next-line no-await-in-loop
@@ -369,9 +533,11 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
       setLastSuccess({
         filename: active.parsed.filename,
         kind: active.kind,
-        rows: active.parsed.rows.length,
-        columns: columnCount,
-        fieldsDetected: detected,
+        rowsIngested: ds.summary.rowsIngested,
+        detectedLabel: active.kind === "payroll" ? "Detected: payroll data" : "Detected: spend data",
+        topVendors: ds.summary.topVendors,
+        dateRange: ds.summary.dateRange,
+        warnings: ds.summary.warnings,
       });
       const updatedQueue = queue.map((x) =>
         x.id === active.id ? { ...x, status: "imported" as const } : x,
@@ -508,7 +674,7 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
       ? ingestWorkspaceDataset(active.parsed.rows, active.parsed.filename, entity, {
           spendOverrides: active.kind === "spend" ? spendOverrides : undefined,
           payrollOverrides: active.kind === "payroll" ? payrollOverrides : undefined,
-        })
+        }).dataset
       : null;
 
   const entityInsights = insights.filter((x) => x.entity === entity);
@@ -546,6 +712,36 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
           </Badge>
         ))}
       </div>
+
+      <div className="rounded-2xl border border-border/60 bg-card/70 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-foreground">Upload progress</div>
+            <div className="text-[11px] text-muted-foreground">{stageLabel(workflowStage)}</div>
+          </div>
+          <div className="flex items-center gap-2 text-[11px]">
+            {(["Upload", "Parse", "Analyze", "Done"] as const).map((label, i) => (
+              <div key={label} className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold",
+                    i <= activeStep
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                      : "border-border/60 bg-muted/20 text-muted-foreground",
+                  )}
+                >
+                  {i + 1}
+                </span>
+                <span className={cn("hidden sm:inline", i <= activeStep ? "text-foreground" : "text-muted-foreground")}>
+                  {label}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <UploadStepIndicator stage={workflowStage} />
 
       <div
         role="button"
@@ -672,6 +868,13 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
         ) : null}
       </div>
 
+      {workflowStage === "success" && ingestSummary ? (
+        <UploadSuccessCard
+          summary={ingestSummary}
+          onAskAI={() => router.push("/app/ai-workspace")}
+        />
+      ) : null}
+
       {queue.length > 0 ? (
         <div className="rounded-2xl border border-border/60 bg-card/40 p-4">
           <div className="flex items-center justify-between gap-2">
@@ -773,50 +976,46 @@ export function PremiumUploadExperience({ entity, clientId, className }: Premium
       {lastSuccess ? (
         <div className="grid gap-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] p-4 text-sm">
           <div className="flex flex-wrap items-start gap-3">
-            <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+            <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
             <div className="min-w-0 flex-1">
-              <div className="font-semibold text-foreground">Import successful</div>
+              <div className="font-semibold text-foreground">Upload complete</div>
               <div className="mt-0.5 text-xs text-muted-foreground">
-                {lastSuccess.filename} · {lastSuccess.kind} · {lastSuccess.rows.toLocaleString()} rows ·{" "}
-                {lastSuccess.columns} columns · fields detected: {lastSuccess.fieldsDetected}
+                {lastSuccess.filename} · {lastSuccess.detectedLabel}
               </div>
             </div>
           </div>
-          <div className="rounded-xl border border-border/50 bg-background/50 px-3 py-2 text-xs text-muted-foreground">
-            Quick summary: {lastSuccess.rows.toLocaleString()} rows imported. Next, run a summary or anomaly scan to get KPIs,
-            risks, and recommended actions from this dataset.
-          </div>
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Suggested next steps</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Link
-                className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "rounded-xl no-underline")}
-                href={`/app/ai-workspace?afterUpload=1&kind=${encodeURIComponent(lastSuccess.kind)}&prompt=${encodeURIComponent(
-                  `I just imported ${lastSuccess.kind} data from "${lastSuccess.filename}" (${lastSuccess.rows.toLocaleString()} rows). Write an executive summary: KPI highlights, notable patterns, material risks, and 3 concrete next actions.`,
-                )}`}
-              >
-                <FileText className="mr-2 h-4 w-4" />
-                Summarize
-              </Link>
-              <Link
-                className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "rounded-xl no-underline")}
-                href={`/app/ai-workspace?afterUpload=1&kind=${encodeURIComponent(lastSuccess.kind)}&prompt=${encodeURIComponent(
-                  `Using my latest ${lastSuccess.kind} upload ("${lastSuccess.filename}"), list anomalies, suspicious duplicates, and outliers worth investigation. Be specific and prioritize by impact.`,
-                )}`}
-              >
-                <Activity className="mr-2 h-4 w-4" />
-                Find anomalies
-              </Link>
-              <Link className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "rounded-xl no-underline")} href="/app/reports">
-                <FileDown className="mr-2 h-4 w-4" />
-                Build report
-              </Link>
-              <Link className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "rounded-xl no-underline")} href="/app/forecasting">
-                <Gauge className="mr-2 h-4 w-4" />
-                Forecast
-              </Link>
+
+          <div className="grid gap-2 rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-xs">
+            <div>
+              <span className="font-semibold text-foreground">{lastSuccess.rowsIngested.toLocaleString()}</span>{" "}
+              <span className="text-muted-foreground">rows ingested</span>
             </div>
+            {lastSuccess.kind === "spend" && lastSuccess.topVendors.length ? (
+              <div className="text-muted-foreground">
+                <span className="font-semibold text-foreground">Top vendors:</span> {lastSuccess.topVendors.join(", ")}
+              </div>
+            ) : null}
+            {formatMonthRange(lastSuccess.dateRange) ? (
+              <div className="text-muted-foreground">
+                <span className="font-semibold text-foreground">Date range:</span> {formatMonthRange(lastSuccess.dateRange)}
+              </div>
+            ) : null}
           </div>
+
+          {lastSuccess.warnings.length ? (
+            <div className="grid gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-950 dark:text-amber-50/95">
+              {lastSuccess.warnings.map((w) => (
+                <div key={w}>⚠️ {w}</div>
+              ))}
+            </div>
+          ) : null}
+
+          <Link
+            href="/app/ai-workspace"
+            className={cn(buttonVariants({ variant: "default", size: "sm" }), "w-fit rounded-xl no-underline")}
+          >
+            Ask AI about this data →
+          </Link>
         </div>
       ) : null}
 

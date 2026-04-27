@@ -8,29 +8,44 @@ import { SpenddaVsExcelStrip } from "@/components/app/spendda-vs-excel-strip";
 const tiers = [
   {
     name: "Starter",
-    tag: "Pilot & single entity",
+    tag: "Getting started",
     price: "Contact",
-    description: "Ship a credible pilot in weeks: uploads, dashboards, and scoped AI so sponsors see ROI before the next budget cycle.",
-    bullets: ["CSV / Excel uploads with mapping", "Core dashboards & alerts", "AI Workspace (tenant-scoped)", "Email support"],
+    description: "One location. Upload files, get AI analysis, monthly PDF report, and anomaly alerts.",
+    bullets: [
+      "CSV / Excel uploads with column mapping",
+      "AI Q&A on your actual data",
+      "Monthly PDF report",
+      "Anomaly and duplicate alerts",
+      "Email support",
+    ],
     cta: "Book demo",
     href: "/book-demo",
     featured: false,
   },
   {
     name: "Growth",
-    tag: "Multi-entity oversight",
+    tag: "Growing businesses",
     price: "Contact",
-    description: "Regional rollouts with role-based access, exportable board packs, and investigation workflows across entities.",
-    bullets: ["Multi-entity & departments", "Enterprise PDF / XLSX bundles", "Investigation & traceability", "Priority support"],
+    description: "Multiple locations or heavy users. Full reporting with prior period comparisons and XLSX exports.",
+    bullets: [
+      "Everything in Starter",
+      "Multiple locations / entities",
+      "Location performance comparisons",
+      "Payroll + spend combined view",
+      "Prior period comparisons",
+      "XLSX export packs",
+      "Priority support",
+    ],
     cta: "Talk to sales",
     href: "/book-demo",
     featured: true,
   },
   {
     name: "Enterprise",
-    tag: "Sovereign-grade programs",
+    tag: "Large organizations",
     price: "Contact",
-    description: "Security review materials, custom data boundaries, and procurement-aligned rollout for ministries and holding groups.",
+    description:
+      "Groups, NGOs, schools, and public sector. Custom data boundaries, SSO, audit logs, and a named support contact.",
     bullets: ["Tenant isolation & audit logs", "Security + trust review package", "Integrations roadmap", "Named CSM"],
     cta: "Book demo",
     href: "/book-demo",
@@ -46,11 +61,10 @@ export default function PricingPage() {
       <main className="mx-auto max-w-7xl px-4 pb-24 pt-12 sm:px-6 lg:px-8 lg:pt-16">
         <p className="text-sm font-semibold text-emerald-200">Pricing</p>
         <h1 className="mt-3 max-w-3xl text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-          Pricing that scales with conviction
+          Simple pricing. No surprise bills.
         </h1>
         <p className="mt-5 max-w-2xl text-lg text-slate-400">
-          Every tier ships with encryption in transit, role-aware surfaces, and a clear path to production hosting. Packaging
-          reflects entity count, modules, and support — we scope it in one short call so procurement gets numbers, not vibes.
+          Start with one upload. Upgrade when you need multi-location comparisons or priority support.
         </p>
 
         <div className="mt-10">
@@ -100,15 +114,8 @@ export default function PricingPage() {
         </div>
 
         <p className="mt-12 text-center text-sm text-slate-500">
-          Volume licensing for large ministries and holding groups — see{" "}
-          <Link href="/trust" className="text-blue-300 hover:text-white">
-            trust
-          </Link>{" "}
-          and{" "}
-          <Link href="/security" className="text-blue-300 hover:text-white">
-            security
-          </Link>{" "}
-          before procurement.
+          All plans include encrypted storage and role-aware access. Enterprise plans include security review materials and
+          integration roadmap support.
         </p>
       </main>
       <MarketingFooter />

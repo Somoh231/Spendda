@@ -62,9 +62,30 @@ export type GenerateOptions = {
 export function generateDemoDataset(opts: GenerateOptions = {}): DemoDataset {
   const seed = opts.seed ?? 1337;
   const months = opts.months ?? 24;
-  const transactionCount = opts.transactions ?? 100_000;
-  const employeeCount = opts.employees ?? 10_000;
-  const vendorCount = opts.vendors ?? 200;
+  const pack = String(opts.demoPackId || "").trim();
+  const isUsb = pack === "home-care-us" || pack === "childcare-us" || pack === "restaurant-us" || pack === "sme-us";
+
+  // US SME packs aim for realistic monthly totals rather than 100k synthetic rows.
+  const txPerMonthDefault = isUsb ? 220 : Math.round((opts.transactions ?? 100_000) / months);
+  const transactionCount =
+    opts.transactions ??
+    (isUsb ? txPerMonthDefault * months : 100_000);
+
+  const employeeCount =
+    opts.employees ??
+    (pack === "home-care-us" ? 24 : pack === "childcare-us" ? 38 : pack === "restaurant-us" ? 85 : pack === "sme-us" ? 12 : 10_000);
+
+  const vendorCount =
+    opts.vendors ??
+    (pack === "home-care-us"
+      ? 12
+      : pack === "childcare-us"
+        ? 10
+        : pack === "restaurant-us"
+          ? 18
+          : pack === "sme-us"
+            ? 18
+            : 200);
   const currency = opts.currency ?? "USD";
 
   const rng = createRng(seed);
@@ -76,62 +97,98 @@ export function generateDemoDataset(opts: GenerateOptions = {}): DemoDataset {
     currency,
   };
 
-  const ministries: Ministry[] = [
-    "Ministry of Health",
-    "Ministry of Education",
-    "Ministry of Transport",
-    "Ministry of Agriculture",
-    "Ministry of Infrastructure",
-    "Ministry of Interior",
-    "Ministry of Public Works",
-    "Ministry of Finance",
-  ].map((name, idx) => ({ id: `MIN-${idx + 1}`, name }));
+  const ministries: Ministry[] = (
+    isUsb
+      ? ["HQ"]
+      : [
+          "Ministry of Health",
+          "Ministry of Education",
+          "Ministry of Transport",
+          "Ministry of Agriculture",
+          "Ministry of Infrastructure",
+          "Ministry of Interior",
+          "Ministry of Public Works",
+          "Ministry of Finance",
+        ]
+  ).map((name, idx) => ({ id: `MIN-${idx + 1}`, name }));
 
-  const counties: County[] = [
-    "North County",
-    "River County",
-    "Coastal County",
-    "Highland County",
-    "Central County",
-    "Eastern County",
-    "Western County",
-    "Southern County",
-    "Capital District",
-    "Lakeside County",
-    "Frontier County",
-    "Green Valley County",
-  ].map((name, idx) => ({ id: `CO-${idx + 1}`, name }));
+  const counties: County[] = (
+    pack === "restaurant-us"
+      ? ["Downtown", "Westside", "Airport"]
+      : pack === "childcare-us"
+        ? ["Center 1 - Main St", "Center 2 - Oak Ave", "Center 3 - Park Blvd"]
+        : pack === "home-care-us"
+          ? ["HQ"]
+          : pack === "sme-us"
+            ? ["HQ"]
+            : [
+                "North County",
+                "River County",
+                "Coastal County",
+                "Highland County",
+                "Central County",
+                "Eastern County",
+                "Western County",
+                "Southern County",
+                "Capital District",
+                "Lakeside County",
+                "Frontier County",
+                "Green Valley County",
+              ]
+  ).map((name, idx) => ({ id: `CO-${idx + 1}`, name }));
 
-  const deptNames = [
-    "Operations",
-    "Procurement",
-    "Finance",
-    "HR",
-    "Payroll",
-    "Clinical Services",
-    "Maintenance",
-    "Capital Projects",
-    "IT Services",
-    "Logistics",
-    "Audit & Compliance",
-    "Administration",
-    "Program Delivery",
-  ];
+  const deptNames =
+    pack === "home-care-us"
+      ? ["Skilled Nursing", "Personal Care", "Companion Care", "Physical Therapy"]
+      : pack === "childcare-us"
+        ? ["Center 1 - Main St", "Center 2 - Oak Ave", "Center 3 - Park Blvd"]
+        : pack === "restaurant-us"
+          ? ["Downtown", "Westside", "Airport"]
+          : pack === "sme-us"
+            ? ["Operations", "Sales", "Service Delivery", "Admin"]
+            : [
+                "Operations",
+                "Procurement",
+                "Finance",
+                "HR",
+                "Payroll",
+                "Clinical Services",
+                "Maintenance",
+                "Capital Projects",
+                "IT Services",
+                "Logistics",
+                "Audit & Compliance",
+                "Administration",
+                "Program Delivery",
+              ];
 
   const departments: Department[] = [];
   let deptIdx = 1;
-  for (const min of ministries) {
+  if (isUsb) {
+    const min = ministries[0]!;
     for (const co of counties) {
-      const deptCount = rng.int(2, 4);
-      const picks = new Set<string>();
-      while (picks.size < deptCount) picks.add(rng.pick(deptNames));
-      for (const dn of picks) {
-        departments.push({
-          id: `DEP-${deptIdx++}`,
-          name: dn,
-          ministryId: min.id,
-          countyId: co.id,
-        });
+      // For US packs, treat "departments" as the primary entity lines/locations.
+      departments.push({
+        id: `DEP-${deptIdx++}`,
+        name: co.name,
+        ministryId: min.id,
+        countyId: co.id,
+      });
+    }
+  } else {
+    for (const min of ministries) {
+      for (const co of counties) {
+        const deptCount = rng.int(2, 4);
+        const picks = new Set<string>();
+        while (picks.size < deptCount) picks.add(rng.pick(deptNames));
+        for (const dn of picks) {
+          departments.push({
+            id: `DEP-${deptIdx++}`,
+            name: dn,
+            ministryId: min.id,
+            countyId: co.id,
+          });
+        }
       }
     }
   }
@@ -166,14 +223,17 @@ export function generateDemoDataset(opts: GenerateOptions = {}): DemoDataset {
     "Trading",
   ];
 
+  const restaurantVendors = ["US Foods", "Sysco", "Local Produce Co", "Beverage Direct"];
   const vendors: Vendor[] = Array.from({ length: vendorCount }).map((_, i) => {
-    const name = `${rng.pick(vendorPrefixes)} ${rng.pick(vendorSuffixes)} ${
-      rng.bool(0.25) ? "Co." : "Ltd."
-    }`;
+    const baseName =
+      pack === "restaurant-us" && i < restaurantVendors.length
+        ? restaurantVendors[i]!
+        : `${rng.pick(vendorPrefixes)} ${rng.pick(vendorSuffixes)} ${rng.bool(0.25) ? "Co." : "Ltd."}`;
+    const category = pack === "restaurant-us" && i < restaurantVendors.length ? "Logistics" : rng.pick(vendorCategories);
     return {
       id: `VND-${i + 1}`,
-      name,
-      category: rng.pick(vendorCategories),
+      name: baseName,
+      category,
       preferred: rng.bool(0.18),
       createdAt: isoDate(new Date(Date.now() - rng.int(200, 2000) * 86400000)),
     };
@@ -345,6 +405,21 @@ export function generateDemoDataset(opts: GenerateOptions = {}): DemoDataset {
   const repeatedPaymentPool: { vendorId: string; amount: number; deptId: string }[] =
     [];
 
+  const monthlySpendRange =
+    pack === "home-care-us"
+      ? [28_000, 52_000]
+      : pack === "childcare-us"
+        ? [18_000, 34_000]
+        : pack === "restaurant-us"
+          ? [45_000, 95_000]
+          : pack === "sme-us"
+            ? [15_000, 45_000]
+            : null;
+
+  const desiredMonthly = monthlySpendRange ? rng.int(monthlySpendRange[0], monthlySpendRange[1]) : null;
+  const avgTxPerMonth = Math.max(1, Math.round(transactionCount / Math.max(1, months)));
+  const packBaseMean = desiredMonthly ? Math.max(45, Math.round(desiredMonthly / avgTxPerMonth)) : null;
+
   for (let mi = 0; mi < monthStarts.length; mi++) {
     const monthStart = monthStarts[mi];
     const monthCount = monthTargets[mi] + (mi === 0 ? transactionCount - monthTargets.reduce((a,b)=>a+b,0) : 0);
@@ -362,6 +437,9 @@ export function generateDemoDataset(opts: GenerateOptions = {}): DemoDataset {
 
       // Amount model by category, with occasional outliers.
       const baseMean =
+        packBaseMean
+          ? packBaseMean
+          : 
         vendor.category === "Construction"
           ? 38_000
           : vendor.category === "Medical"

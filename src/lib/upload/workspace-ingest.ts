@@ -141,6 +141,87 @@ export type WorkspaceIngestOverrides = {
   payrollOverrides?: Partial<PayrollMapping>;
 };
 
+export type WorkspaceIngestSummary = {
+  rowsIngested: number;
+  kind: "spend" | "payroll";
+  topVendors: string[]; // top 3 vendor names if spend
+  totalAmount: number;
+  dateRange: { from: string | null; to: string | null };
+  warnings: string[];
+};
+
+export type IngestSummary = {
+  rowsIngested: number;
+  kind: "spend" | "payroll";
+  totalAmount: number;
+  topVendors: string[];
+  dateRange: { from: string | null; to: string | null };
+  warnings: string[];
+};
+
+export function ingestWorkspaceUploadWithSummary(
+  rows: CsvRow[],
+  filename: string,
+  entity: string,
+  overrides?: WorkspaceIngestOverrides,
+  warnings?: string[],
+): [UploadedInsights, IngestSummary] {
+  const res = ingestWorkspaceUpload(rows, filename, entity, overrides, warnings);
+  return [
+    res.insight,
+    {
+      rowsIngested: res.summary.rowsIngested,
+      kind: res.summary.kind,
+      totalAmount: res.summary.totalAmount,
+      topVendors: res.summary.topVendors,
+      dateRange: res.summary.dateRange,
+      warnings: res.summary.warnings,
+    },
+  ];
+}
+
+function summarizeSpendTx(tx: Array<{ vendor?: string; amount?: number; date?: string | null }>, warnings: string[]): WorkspaceIngestSummary {
+  const byVendor = new Map<string, number>();
+  let totalAmount = 0;
+  let from: string | null = null;
+  let to: string | null = null;
+  tx.forEach((t) => {
+    const amt = typeof t.amount === "number" ? t.amount : 0;
+    if (amt > 0) totalAmount += amt;
+    const v = String(t.vendor || "").trim();
+    if (v && amt > 0) byVendor.set(v, (byVendor.get(v) || 0) + amt);
+    const d = String(t.date || "").slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      if (!from || d < from) from = d;
+      if (!to || d > to) to = d;
+    }
+  });
+  const topVendors = [...byVendor.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([name]) => name);
+  return {
+    rowsIngested: tx.length,
+    kind: "spend",
+    topVendors,
+    totalAmount,
+    dateRange: { from, to },
+    warnings,
+  };
+}
+
+function summarizePayroll(items: Array<{ salaryCurrent?: number }>, warnings: string[]): WorkspaceIngestSummary {
+  const totalAmount = items.reduce((s, r) => s + (typeof r.salaryCurrent === "number" && r.salaryCurrent > 0 ? r.salaryCurrent : 0), 0);
+  return {
+    rowsIngested: items.length,
+    kind: "payroll",
+    topVendors: [],
+    totalAmount,
+    dateRange: { from: null, to: null },
+    warnings,
+  };
+}
+
 function resolveSpendMapping(headers: string[], overrides?: Partial<SpendMapping>, rows?: CsvRow[]): SpendMapping {
   const base = autoSpendMapping(headers);
   const out: SpendMapping = { ...base };
@@ -336,15 +417,48 @@ export function ingestWorkspaceUpload(
   filename: string,
   entity: string,
   overrides?: WorkspaceIngestOverrides,
-): UploadedInsights {
+  parseWarnings?: string[],
+): { insight: UploadedInsights; summary: WorkspaceIngestSummary } {
   const headers = Object.keys(rows[0] || {});
   const kind = classifyDataset(headers);
   if (kind === "payroll") {
     const mapping = resolvePayrollMapping(headers, overrides?.payrollOverrides, rows);
-    return computePayrollInsight(rows, mapping, filename, entity);
+    const insight = computePayrollInsight(rows, mapping, filename, entity);
+    const items = rows.map((r) => ({
+      salaryCurrent: toNumber(
+        getPayrollMapped(r, mapping, "salary", [
+          "salary",
+          "wage",
+          "wages",
+          "payroll",
+          "compensation",
+          "labor",
+          "gross_salary",
+          "gross",
+        ]),
+      ),
+    }));
+    return { insight, summary: summarizePayroll(items, parseWarnings || []) };
   }
   const mapping = resolveSpendMapping(headers, overrides?.spendOverrides, rows);
-  return computeSpendInsight(rows, mapping, filename, entity);
+  const insight = computeSpendInsight(rows, mapping, filename, entity);
+  const tx = rows.map((r) => ({
+    vendor: getSpendMapped(r, mapping, "vendor", ["vendor", "merchant", "payee", "supplier"]),
+    amount: toNumber(
+      getSpendMapped(r, mapping, "amount", ["amount", "spend", "total", "value", "debit", "payment", "cost", "line_total"]),
+    ),
+    date: normalizeFinancialDate(
+      getSpendMapped(r, mapping, "date", [
+        "date",
+        "created_at",
+        "invoice_date",
+        "transaction_date",
+        "txn_date",
+        "posting_date",
+      ]),
+    ),
+  }));
+  return { insight, summary: summarizeSpendTx(tx, parseWarnings || []) };
 }
 
 export function describeIngestKind(rows: CsvRow[]): "spend" | "payroll" {
@@ -368,7 +482,8 @@ export function ingestWorkspaceDataset(
   filename: string,
   entity: string,
   overrides?: WorkspaceIngestOverrides,
-): WorkspaceDataset {
+  parseWarnings?: string[],
+): { dataset: WorkspaceDataset; summary: WorkspaceIngestSummary } {
   const headers = Object.keys(rows[0] || {});
   const kind = classifyDataset(headers);
   const uploadedAt = new Date().toISOString();
@@ -443,7 +558,8 @@ export function ingestWorkspaceDataset(
       return { ...i, signals, risk };
     });
 
-    return { kind: "payroll", filename, entity, uploadedAt, rows: enriched };
+    const dataset: WorkspaceDataset = { kind: "payroll", filename, entity, uploadedAt, rows: enriched };
+    return { dataset, summary: summarizePayroll(enriched, parseWarnings || []) };
   }
 
   const mapping = resolveSpendMapping(headers, overrides?.spendOverrides, rows);
@@ -503,5 +619,6 @@ export function ingestWorkspaceDataset(
     return { ...t, flags };
   });
 
-  return { kind: "spend", filename, entity, uploadedAt, rows: enriched };
+  const dataset: WorkspaceDataset = { kind: "spend", filename, entity, uploadedAt, rows: enriched };
+  return { dataset, summary: summarizeSpendTx(enriched, parseWarnings || []) };
 }
