@@ -36,7 +36,7 @@ const reveal = "motion-safe:animate-fade-in-up";
 const heroProof = [
   { icon: Shield, text: "We structure and clean your records. No CFO or data hire required." },
   { icon: Clock, text: "From first upload to reports you can run the business on, often under 10 minutes." },
-  { icon: Target, text: "Paper exports and messy spreadsheets are welcome" },
+  { icon: Target, text: "Paper exports and messy spreadsheets are welcome." },
 ] as const;
 
 const logoPlaceholders = ["Home care", "Childcare", "Restaurants", "SMEs", "NGOs", "Schools"] as const;
@@ -352,8 +352,7 @@ export default function Home() {
                 What Spendda becomes for you
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
-                Your reporting system, your financial oversight layer, your data infrastructure, and your decision engine. You run
-                you run the business from one structured place.
+                Your reporting system, your financial oversight layer, your data infrastructure, and your decision engine. Run your business from one structured place.
               </p>
             </div>
             <ProductScreenshots />

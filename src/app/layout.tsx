@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     template: "%s · Spendda",
   },
   description:
-    "Spendda surfaces what matters in spend and payroll before it escalates—governed AI, forecasts, and board-ready exports for teams that cannot afford surprises.",
+    "Spendda surfaces what matters in spend and payroll before it escalates. Governed AI, forecasts, and board-ready exports for teams that cannot afford surprises.",
   icons: {
     icon: [{ url: "/brand/spendda-logo.png", type: "image/png" }],
     apple: [{ url: "/brand/spendda-logo.png", type: "image/png" }],
@@ -57,7 +57,7 @@ export const metadata: Metadata = {
     locale: "en_US",
     title: "Spendda",
     description:
-      "Spend and payroll intelligence that surfaces what matters before it escalates — forecasting, alerts, and executive-ready reporting.",
+      "Spend and payroll reporting that surfaces what matters before it escalates. Forecasting, alerts, and executive-ready reporting.",
     images: [{ url: "/brand/spendda-logo.png", width: 1024, height: 1024, alt: "Spendda" }],
   },
   twitter: {

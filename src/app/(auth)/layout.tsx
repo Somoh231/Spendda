@@ -57,8 +57,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
                     Sign in to a workspace that earns the next meeting
                   </h1>
                   <p className="mt-4 max-w-lg text-base leading-8 text-slate-300">
-                    Spendda connects the dots between vendor lines, payroll risk, and executive narrative—so finance
-                    leads the conversation instead of chasing screenshots.
+                    Spendda connects vendor spend, payroll risk, and executive narrative in one system. Finance leads the
+                    conversation instead of chasing screenshots.
                   </p>
 
                   <div className="mt-8 grid gap-4">
