@@ -92,7 +92,7 @@ export function HeroProductPreview() {
           <AlertTriangle className="h-3.5 w-3.5" />
           Risk alert
         </div>
-        <p className="mt-1 max-w-[190px] text-[11px] leading-relaxed text-slate-300">Payroll spike vs. prior month — Finance review.</p>
+        <p className="mt-1 max-w-[190px] text-[11px] leading-relaxed text-slate-300">Payroll spike vs. prior month. Finance review.</p>
       </div>
 
       <div className="overflow-hidden rounded-[1.75rem] border border-white/[0.14] bg-slate-950/95 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.65)] ring-1 ring-white/[0.06] transition-all duration-300 hover:border-white/[0.18] hover:shadow-[0_28px_90px_-10px_rgba(37,99,235,0.2)]">
@@ -148,7 +148,7 @@ export function HeroProductPreview() {
                 <Sparkles className="h-4 w-4 shrink-0 text-blue-300" />
               </div>
               <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                Procurement concentration up 8% — top 3 vendors now represent 41% of non-payroll spend.
+                Procurement concentration up 8%. Top 3 vendors now represent 41% of non-payroll spend.
               </p>
             </div>
             <div

@@ -25,7 +25,7 @@ const cards = [
   },
   {
     title: "Platform tour",
-    description: "What you get after login — dashboards, AI workspace, and exports.",
+    description: "What you get after login. Reporting, Q&A, and exports.",
     href: "/platform",
     icon: Sparkles,
   },
@@ -39,11 +39,10 @@ export default function ResourcesPage() {
       <main className="mx-auto max-w-7xl px-4 pb-24 pt-12 sm:px-6 lg:px-8 lg:pt-16">
         <p className="text-sm font-semibold text-blue-300">Resources</p>
         <h1 className="mt-3 max-w-3xl text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-          Evaluate Spendda with confidence
+          See how Spendda works in practice
         </h1>
         <p className="mt-5 max-w-2xl text-lg text-slate-400">
-          Security narrative, downloadable samples, and product context — everything you need before a deeper technical
-          session.
+          Explore sample data, reporting outputs, and product walkthroughs to understand how Spendda turns messy records into a working system.
         </p>
 
         <div className="mt-14 grid gap-5 sm:grid-cols-2">

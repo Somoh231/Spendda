@@ -4,7 +4,7 @@ const BADGES = [
   { icon: Lock, label: "TLS 1.2+", detail: "In transit" },
   { icon: FileKey2, label: "Tenant isolation", detail: "Per-client workspaces" },
   { icon: Server, label: "Backups", detail: "Daily snapshots (Enterprise)" },
-  { icon: BadgeCheck, label: "SOC 2", detail: "Type II — roadmap" },
+  { icon: BadgeCheck, label: "SOC 2", detail: "Type II, roadmap" },
 ] as const;
 
 export function TrustComplianceBadges() {

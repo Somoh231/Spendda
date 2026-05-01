@@ -10,7 +10,7 @@ const tiers = [
     name: "Starter",
     tag: "Getting started",
     price: "Contact",
-    description: "One location. Upload records — we turn them into structured reporting, AI Workspace Q&A, monthly PDFs, and anomaly alerts.",
+    description: "One location. Upload records. We turn them into structured reporting, Q&A, monthly PDFs, and anomaly alerts.",
     bullets: [
       "CSV / Excel uploads with column mapping",
       "AI Q&A on your actual data",
@@ -64,8 +64,7 @@ export default function PricingPage() {
           Simple pricing. No surprise bills.
         </h1>
         <p className="mt-5 max-w-2xl text-lg text-slate-400">
-          Choose how much of your data and finance operations we handle. Start with one upload — upgrade when you need
-          multi-location comparisons or priority support.
+          Choose how much of your data and finance operations we handle. Start with one upload. Upgrade when you need multi-location comparisons or priority support.
         </p>
 
         <div className="mt-10">

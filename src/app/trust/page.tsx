@@ -18,7 +18,7 @@ import { TrustComplianceBadges } from "@/components/marketing/trust-badges";
 export const metadata: Metadata = {
   title: "Trust center",
   description:
-    "Spendda Trust Center — security, privacy, compliance posture, SSO, APIs, backups, and audit readiness for enterprise buyers.",
+    "Spendda Trust Center. Security, privacy, compliance posture, SSO, APIs, backups, and audit readiness for enterprise buyers.",
 };
 
 const tiles = [
@@ -38,13 +38,13 @@ const tiles = [
     href: "/docs",
     icon: BookOpen,
     title: "API documentation",
-    body: "Public REST surface — OpenAPI spec and examples ship with your pilot workspace.",
+    body: "Public REST surface. OpenAPI spec and examples ship with your pilot workspace.",
   },
   {
     href: "#sso",
     icon: KeyRound,
     title: "Single sign-on (SSO)",
-    body: "SAML 2.0 and OIDC with IdP-initiated login — configured during enterprise onboarding.",
+    body: "SAML 2.0 and OIDC with IdP-initiated login. Configured during enterprise onboarding.",
   },
 ] as const;
 
@@ -59,11 +59,11 @@ export default function TrustCenterPage() {
           Trust center
         </div>
         <h1 className="mt-4 max-w-3xl text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-          Everything procurement asks for — in one place
+          Everything your team needs to trust the system
         </h1>
         <p className="mt-5 max-w-2xl text-lg text-slate-400">
-          Spendda is designed for boards, auditors, and IT security teams. Use this hub to review our posture, then
-          request a DPA, architecture diagram, or penetration test summary during your pilot.
+          Spendda is built for teams that need reliable data, clear reporting, and strong controls. Review security, access
+          policies, and system behavior in one place.
         </p>
 
         <div className="mt-12 space-y-4">
@@ -107,12 +107,12 @@ export default function TrustCenterPage() {
               <KeyRound className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-semibold text-white">SSO — SAML & OIDC</h2>
+              <h2 className="text-lg font-semibold text-white">SSO, SAML and OIDC</h2>
               <p className="mt-2 text-sm leading-relaxed text-slate-400">
                 Enterprise workspaces connect to Okta, Entra ID, Google Workspace, or your preferred IdP. We support SP-
                 and IdP-initiated flows, enforced MFA at the IdP, and optional SCIM directory sync on the roadmap. Your
                 implementation engineer documents redirect URLs, attribute mapping, and session lifetime during
-                onboarding — this site holds a placeholder until your tenant is provisioned.
+                onboarding. This site holds a placeholder until your tenant is provisioned.
               </p>
             </div>
           </div>
@@ -126,7 +126,7 @@ export default function TrustCenterPage() {
             </div>
             <p className="mt-3 text-sm leading-relaxed text-slate-400">
               Tenant-scoped roles (owner, admin, member, viewer) control uploads, exports, and admin surfaces. Export and
-              intelligence events can be mirrored to an audit feed for governance teams — see{" "}
+              system events can be mirrored to an audit feed for governance teams. See{" "}
               <Link href="/app/settings/tenant" className="font-medium text-blue-300 hover:text-white">
                 Client portal
               </Link>{" "}

@@ -34,8 +34,8 @@ const cardLink =
 const reveal = "motion-safe:animate-fade-in-up";
 
 const heroProof = [
-  { icon: Shield, text: "We structure and clean your records — no CFO or data hire required" },
-  { icon: Clock, text: "From first upload to reports you can run the business on — often under 10 minutes" },
+  { icon: Shield, text: "We structure and clean your records. No CFO or data hire required." },
+  { icon: Clock, text: "From first upload to reports you can run the business on, often under 10 minutes." },
   { icon: Target, text: "Paper exports and messy spreadsheets are welcome" },
 ] as const;
 
@@ -44,7 +44,7 @@ const logoPlaceholders = ["Home care", "Childcare", "Restaurants", "SMEs", "NGOs
 const industrySolutions = [
   {
     title: "Home care & childcare",
-    body: "Caregiver pay ratios, client billing gaps, subsidy payment delays, and cash runway — in one clear view.",
+    body: "Caregiver pay ratios, client billing gaps, subsidy payment delays, and cash runway, in one clear view.",
     icon: Factory,
     href: "/solutions",
   },
@@ -62,7 +62,7 @@ const industrySolutions = [
   },
   {
     title: "Finance & GRC teams",
-    body: "Oversight layer on your ledgers: repeatable reporting, concentration signals, and audit-friendly exports — built from your real files, not placeholders.",
+    body: "Oversight layer on your ledgers with repeatable reporting, concentration checks, and audit-friendly exports. Built from your real files, not placeholders.",
     icon: Briefcase,
     href: "/solutions",
   },
@@ -74,7 +74,7 @@ const industrySolutions = [
   },
   {
     title: "Multi-site operators",
-    body: "Compare revenue, labor cost, and vendor spend across all your locations — see which one is underperforming and why.",
+    body: "Compare revenue, labor cost, and vendor spend across all your locations. See which one is underperforming and why.",
     icon: Building2,
     href: "/solutions",
   },
@@ -84,7 +84,7 @@ const howSteps = [
   {
     step: "1",
     title: "Upload your files or records",
-    body: "CSV, Excel, payroll, or exports — whatever you already have.",
+    body: "CSV, Excel, payroll, or exports. Use whatever you already have.",
     icon: Upload,
   },
   {
@@ -106,7 +106,7 @@ const roiOutcomes = [
     stat: "10×",
     label: "Hours saved monthly",
     detail:
-      "Stop rebuilding summaries from scratch — one structured flow turns uploads into the reports and decisions your business needs.",
+      "Stop rebuilding summaries from scratch. One structured flow turns uploads into the reports and decisions your business needs.",
     icon: TrendingUp,
   },
   {
@@ -120,7 +120,7 @@ const roiOutcomes = [
     stat: "100%",
     label: "Traceable to source rows",
     detail:
-      "Every figure ties back to your records — a system you can defend, not numbers pulled from thin air.",
+      "Every figure ties back to your records. It is a system you can defend, not numbers pulled from thin air.",
     icon: Shield,
   },
 ] as const;
@@ -162,7 +162,7 @@ export default function Home() {
       <MarketingNav />
 
       <main>
-        {/* 1 — Hero */}
+        {/* 1 - Hero */}
         <section className="relative overflow-hidden">
           <div
             className={`${shell} grid gap-8 pb-12 pt-10 sm:pb-14 sm:pt-11 lg:grid-cols-[1.02fr_0.98fr] lg:items-start lg:gap-10 lg:pb-16 lg:pt-12 ${reveal}`}
@@ -174,7 +174,7 @@ export default function Home() {
               </div>
               <div className="space-y-3">
                 <h1 className="max-w-[24ch] text-balance text-[2rem] font-semibold leading-[1.06] tracking-[-0.035em] text-white sm:text-4xl lg:text-[2.65rem] lg:leading-[1.04]">
-                  Your data and finance team — without hiring one.
+                  Your data and finance team, without hiring one.
                 </h1>
                 <p className="max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-slate-400 sm:text-lg">
                   Spendda transforms messy spreadsheets and paper records into a working data and financial system. Get clarity,
@@ -210,7 +210,7 @@ export default function Home() {
                 })}
               </ul>
               <p className="text-xs leading-relaxed text-slate-500 sm:text-sm">
-                Works with your existing tools — QuickBooks, payroll systems, spreadsheets, or paper records.
+                Works with your existing tools. QuickBooks, payroll systems, spreadsheets, or paper records.
               </p>
             </div>
             <div className="min-w-0 lg:pt-0.5">
@@ -219,7 +219,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 2 — Trusted by */}
+        {/* 2 - Trusted by */}
         <section className={`border-y border-white/10 bg-white/[0.02] py-10 sm:py-12 ${reveal}`} style={{ animationDelay: "60ms" }}>
           <div className={`${shell} space-y-5`}>
             <p className={`${label} text-center text-slate-500`}>Trusted by operators who cannot afford surprises</p>
@@ -234,12 +234,12 @@ export default function Home() {
               ))}
             </div>
             <p className="text-center text-xs text-slate-500">
-              Logos shown as categories during pilot — reference customers available under NDA.
+              Logos shown as categories during pilot. Reference customers available under NDA.
             </p>
           </div>
         </section>
 
-        {/* 3 — Industry solutions */}
+        {/* 3 - Industry solutions */}
         <section className={`py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "80ms" }}>
           <div className={`${shell} space-y-7`}>
             <div className="mx-auto max-w-2xl space-y-2 text-center">
@@ -248,7 +248,7 @@ export default function Home() {
                 Built for the businesses that run on spreadsheets.
               </h2>
               <p className="text-sm leading-relaxed text-slate-400 sm:text-base">
-                Home care, childcare, restaurants, retail — Spendda adapts its language, metrics, and reports to match how
+                Home care, childcare, restaurants, retail. Spendda adapts its language, metrics, and reports to match how
                 you actually run your business.
               </p>
             </div>
@@ -279,13 +279,13 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 4 — How it works */}
+        {/* 4 - How it works */}
         <section className={`border-t border-white/10 bg-white/[0.02] py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "100ms" }}>
           <div className={`${shell} space-y-7`}>
             <div className="mx-auto max-w-2xl space-y-2 text-center">
               <p className={`${label} text-blue-400/90`}>How it works</p>
               <h2 className="text-balance text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
-                From messy records to a working system — in minutes.
+                From messy records to a working system, in minutes.
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
                 Upload your records. We structure, clean, and turn them into a system you can actually run your business on.
@@ -311,13 +311,13 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Before vs After — anchor + contrast */}
+        {/* Before vs After - anchor + contrast */}
         <section className={`border-t border-white/10 py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "110ms" }}>
           <div className={`${shell} space-y-8`}>
             <div className="mx-auto max-w-3xl space-y-3 text-center">
               <p className={`${label} text-violet-400/90`}>Before &amp; after Spendda</p>
               <h2 className="text-balance text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
-                Spendda doesn&apos;t just analyze your data — it becomes the system you run your business on.
+                Spendda doesn&apos;t just analyze your data. It becomes the system you run your business on.
               </h2>
             </div>
             <div className="mx-auto grid max-w-4xl gap-4 md:grid-cols-2 md:gap-5">
@@ -343,7 +343,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 5 — Product screenshots */}
+        {/* 5 - Product screenshots */}
         <section className={`py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "120ms" }}>
           <div className={`${shell} space-y-6`}>
             <div className="mx-auto max-w-2xl space-y-2 text-center">
@@ -352,7 +352,7 @@ export default function Home() {
                 What Spendda becomes for you
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
-                Your reporting system, your financial oversight layer, your data infrastructure, and your decision engine — so
+                Your reporting system, your financial oversight layer, your data infrastructure, and your decision engine. You run
                 you run the business from one structured place.
               </p>
             </div>
@@ -360,7 +360,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 6 — ROI outcomes */}
+        {/* 6 - ROI outcomes */}
         <section className={`border-t border-white/10 py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "140ms" }}>
           <div className={`${shell} space-y-7`}>
             <div className="mx-auto max-w-2xl space-y-2 text-center">
@@ -386,12 +386,12 @@ export default function Home() {
               })}
             </div>
             <p className="text-center text-xs text-slate-500">
-              Based on pilot programs — results depend on data quality and how often you upload.
+              Based on pilot programs. Results depend on data quality and how often you upload.
             </p>
           </div>
         </section>
 
-        {/* 7 — Integrations */}
+        {/* 7 - Integrations */}
         <section className={`border-t border-white/10 bg-white/[0.02] py-10 sm:py-12 ${reveal}`} style={{ animationDelay: "160ms" }}>
           <div className={`${shell} space-y-5`}>
             <div className="mx-auto max-w-2xl space-y-2 text-center">
@@ -400,7 +400,7 @@ export default function Home() {
                 Meet teams where their data already lives
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
-                We meet you where the records already live — spreadsheets, payroll exports, accounting files.{" "}
+                We meet you where the records already live. Spreadsheets, payroll exports, accounting files.{" "}
                 <span className="font-medium text-slate-200">Automate ingestion</span> when your team is ready to hard-plumb the
                 pipes.
               </p>
@@ -421,7 +421,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 8 — Pricing */}
+        {/* 8 - Pricing */}
         <section className={`border-t border-white/10 bg-gradient-to-b from-slate-950 to-slate-900/88 py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "180ms" }}>
           <div className={`${shell} space-y-7`}>
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -431,7 +431,7 @@ export default function Home() {
                   Choose how much of your data and finance operations we handle
                 </h2>
                 <p className="text-sm text-slate-400 sm:text-base">
-                  Three commercial lanes — scoped on a short call so you are not paying for shelf-ware.
+                  Three commercial lanes. Scoped on a short call so you are not paying for shelf-ware.
                 </p>
               </div>
               <Link
@@ -464,7 +464,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 8b — Trust center */}
+        {/* 8b - Trust center */}
         <section className={`border-t border-white/10 bg-white/[0.02] py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "190ms" }}>
           <div className={`${shell} space-y-8`}>
             <div className="mx-auto max-w-2xl space-y-3 text-center">
@@ -473,7 +473,7 @@ export default function Home() {
                 Built so legal, IT, and the board stop blocking the rollout
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
-                Security narrative, privacy summary, SSO path, API placeholders, backups, and audit-ready controls — one
+                Security narrative, privacy summary, SSO path, API placeholders, backups, and audit-ready controls. One
                 link for vendor spend.
               </p>
               <div className="flex flex-wrap justify-center gap-2 pt-1">
@@ -502,7 +502,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 9 — FAQ */}
+        {/* 9 - FAQ */}
         <section className={`py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "200ms" }}>
           <div className={`${shell} space-y-6`}>
             <div className="mx-auto max-w-2xl space-y-2 text-center">
@@ -515,7 +515,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 10 — Final CTA */}
+        {/* 10 - Final CTA */}
         <section className={`border-t border-white/10 bg-gradient-to-r from-blue-500/12 via-slate-950 to-emerald-400/10 py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "220ms" }}>
           <div className={`${shell} flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center`}>
             <div className="max-w-xl space-y-2">
@@ -523,7 +523,7 @@ export default function Home() {
                 Stop guessing which part of your business is bleeding money.
               </h2>
               <p className="text-sm leading-relaxed text-slate-400 sm:text-base">
-                Upload your records in under 5 minutes. We&apos;ll structure them into a system you can run on — no credit card
+                Upload your records in under 5 minutes. We&apos;ll structure them into a system you can run on. No credit card
                 required.
               </p>
             </div>

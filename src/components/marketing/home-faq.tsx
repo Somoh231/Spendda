@@ -8,15 +8,15 @@ import { cn } from "@/lib/utils";
 const faqs = [
   {
     q: "What does Spendda do, in one sentence?",
-    a: "Spendda turns your messy records into a structured data and financial system — so you can run your business with clarity without hiring a finance or data team.",
+    a: "Spendda turns your messy records into a structured data and financial system. You run your business with clarity without hiring a finance or data team.",
   },
   {
     q: "Can we start without live accounting integrations?",
-    a: "Yes — and most people do. Drop in a CSV or Excel export from QuickBooks, Gusto, Square, or any spreadsheet tool. Direct integrations are available when you are ready to automate.",
+    a: "Yes, and most people do. Drop in a CSV or Excel export from QuickBooks, Gusto, Square, or any spreadsheet tool. Direct integrations are available when you are ready to automate.",
   },
   {
     q: "Who is Spendda built for?",
-    a: "Business owners and operators who are too busy running their business to build financial reports manually — home care agencies, childcare centers, restaurants, retail shops, and any SME that needs clarity without hiring a finance team.",
+    a: "Business owners and operators who are too busy running their business to build financial reports manually. Home care agencies, childcare centers, restaurants, retail shops, and any SME that needs clarity without hiring a finance team.",
   },
   {
     q: "How is our data handled?",

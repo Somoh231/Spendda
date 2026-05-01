@@ -8,23 +8,23 @@ import { SpenddaVsExcelStrip } from "@/components/app/spendda-vs-excel-strip";
 const blocks = [
   {
     icon: FileSpreadsheet,
-    title: "Upload-first, venture-fast",
-    body: "Drop CSV or Excel, map columns once, and get health scores and KPIs the same day — no six-month integration gate to prove the thesis.",
+    title: "Start with your existing records",
+    body: "Drop CSV or Excel, map columns once, and get structured reporting the same day. No long integration cycle to get started.",
   },
   {
     icon: Brain,
-    title: "AI Workspace with receipts",
-    body: "Natural-language answers that point back to rows and exports: board PDFs, XLSX packs, and a trail of what was asked and when.",
+    title: "Ask questions on your actual data",
+    body: "Ask questions in plain language. Answers point back to rows and exports. Share PDFs and XLSX packs with a clear trail of what changed.",
   },
   {
     icon: BarChart3,
-    title: "Spend, payroll, and forward view",
-    body: "Duplicates, concentration, payroll anomalies, and forecasting in one surface so CFOs and ministers see one story, not three spreadsheets.",
+    title: "See your full financial picture in one system",
+    body: "Spend, payroll, and forecasting live in one structured place. See what changed, what needs attention, and what to do next.",
   },
   {
     icon: Shield,
-    title: "Accountability by design",
-    body: "Tenant isolation, role-aware navigation, and investigation flows built for finance, audit, and procurement — not a consumer chat toy.",
+    title: "Built for control and reporting",
+    body: "Tenant isolation and role-aware access support controlled uploads, clean reporting, and export trails. Built for finance, audit, and procurement.",
   },
 ];
 
@@ -36,11 +36,11 @@ export default function PlatformPage() {
       <main className="mx-auto max-w-7xl px-4 pb-24 pt-12 sm:px-6 lg:px-8 lg:pt-16">
         <p className="text-sm font-semibold text-blue-300">Platform</p>
         <h1 className="mt-3 max-w-3xl text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-          The intelligence layer serious finance teams fund
+          Your data and finance system, without hiring a team
         </h1>
         <p className="mt-5 max-w-2xl text-lg leading-relaxed text-slate-400">
-          Govern spend and payroll with uploads, anomaly detection, cash and debt stress tests, and exportable executive
-          narratives — layered on top of the systems you already run, not a rip-and-replace science project.
+          Upload your records. We structure, clean, and turn them into a system you can actually run your business on. Get
+          reporting, visibility, and control without hiring a CFO or data analyst.
         </p>
         <div className="mt-10 flex flex-wrap gap-3">
           <Link
@@ -85,8 +85,8 @@ export default function PlatformPage() {
           <div>
             <h2 className="text-lg font-semibold text-white">Dashboard + modules</h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
-              Command center, AI workspace, forecasting, debt and cash intelligence, market and regulatory signals, and
-              enterprise report bundles — tenant- and entity-scoped so rollouts stay governable at portfolio scale.
+              Command center, Q&A, forecasting, cash runway, market context, and report bundles. Tenant and entity scoping
+              keeps rollouts governable at portfolio scale.
             </p>
             <Link href="/pricing" className="mt-4 inline-flex text-sm font-medium text-blue-300 hover:text-white">
               View pricing →

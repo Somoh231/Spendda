@@ -8,7 +8,7 @@ const segments = [
   {
     icon: Users,
     title: "Home care & childcare",
-    body: "Caregiver pay ratios, client billing gaps, subsidy payment delays, and cash runway — in one clear view.",
+    body: "Caregiver pay ratios, client billing gaps, subsidy payment delays, and cash runway, in one clear view.",
   },
   {
     icon: GraduationCap,
@@ -23,7 +23,7 @@ const segments = [
   {
     icon: Building2,
     title: "Finance & GRC teams",
-    body: "Anomaly flags, vendor concentration, and executive summaries grounded in your uploaded ledgers — not demo placeholders.",
+    body: "Oversight layer on your ledgers with repeatable reporting and audit-friendly exports. Built from your real files, not placeholders.",
   },
   {
     icon: Landmark,
@@ -33,7 +33,7 @@ const segments = [
   {
     icon: Building2,
     title: "Multi-site operators",
-    body: "Compare revenue, labor cost, and vendor spend across all your locations — see which one is underperforming and why.",
+    body: "Compare revenue, labor cost, and vendor spend across all your locations. See which one is underperforming and why.",
   },
 ] as const;
 
@@ -48,8 +48,7 @@ export default function SolutionsPage() {
           Built for the businesses that run on spreadsheets.
         </h1>
         <p className="mt-5 max-w-2xl text-lg leading-relaxed text-slate-400">
-          Home care, childcare, restaurants, retail — Spendda adapts its language, metrics, and reports to match how you
-          actually run your business.
+          Spendda turns spreadsheets and manual records into a structured system you can run your business on. We adapt to how you already operate and make your data usable.
         </p>
         <div className="mt-10 flex flex-wrap gap-3">
           <Link

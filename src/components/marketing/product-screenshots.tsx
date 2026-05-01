@@ -48,7 +48,7 @@ function MockAi() {
         Summarize payroll variance vs. last quarter for HQ.
       </div>
       <div className="rounded-lg border border-blue-400/20 bg-blue-500/10 p-2 text-[10px] text-slate-200">
-        Payroll is stable; procurement flags rose 12% — top vendors listed with confidence scores.
+        Payroll is stable; procurement flags rose 12%. Top vendors are listed with confidence scores.
       </div>
     </div>
   );
