@@ -9,7 +9,6 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { groupedNav, navForPortalOrRole } from "./nav-items";
 import { organizationShellSubtitle } from "@/lib/profile/org-adaptation";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { useProfile } from "@/lib/profile/client";
 import { useClientSession } from "@/hooks/use-client-session";
@@ -95,13 +94,13 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "relative hidden min-h-dvh min-w-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[4px_0_32px_hsl(var(--foreground)/0.06)] transition-[width] duration-300 ease-out dark:shadow-[4px_0_32px_rgba(0,0,0,0.28)] md:flex",
+        "relative hidden h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[4px_0_32px_hsl(var(--foreground)/0.06)] transition-[width] duration-300 ease-out dark:shadow-[4px_0_32px_rgba(0,0,0,0.28)] md:flex",
         widthClass,
       )}
     >
       <div
         className={cn(
-          "flex min-h-[4rem] items-center gap-2.5 border-b border-sidebar-border px-2.5 py-2.5",
+          "flex shrink-0 min-h-[4rem] items-center gap-2.5 border-b border-sidebar-border px-2.5 py-2.5",
           collapsed && "justify-center px-1.5",
         )}
       >
@@ -131,7 +130,7 @@ export function Sidebar() {
         ) : null}
       </div>
 
-      <div className={cn("flex items-center justify-end px-2 py-1.5", collapsed && "justify-center")}>
+      <div className={cn("flex shrink-0 items-center justify-end px-2 py-1.5", collapsed && "justify-center")}>
         <Button
           type="button"
           variant="ghost"
@@ -145,10 +144,15 @@ export function Sidebar() {
         </Button>
       </div>
 
-      <div className="h-px w-full bg-sidebar-border" />
+      <div className="h-px w-full shrink-0 bg-sidebar-border" />
 
-      <ScrollArea className="flex-1">
-        <nav className="grid gap-3 px-2 py-3 pb-4">
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto py-2 [scrollbar-color:transparent_transparent] hover:[scrollbar-color:rgba(255,255,255,0.15)_transparent]",
+        )}
+        style={{ scrollbarWidth: "thin" }}
+      >
+        <nav className="grid gap-3 px-2 pb-4 pt-1">
           {groups.map((g) => (
             <div key={g.section} className="grid gap-0.5">
               {!collapsed ? (
@@ -204,10 +208,10 @@ export function Sidebar() {
             </div>
           ))}
         </nav>
-      </ScrollArea>
+      </div>
 
       {!collapsed ? (
-        <div className="border-t border-sidebar-border px-3 py-3 text-[11px] leading-snug text-sidebar-foreground/55">
+        <div className="shrink-0 border-t border-sidebar-border px-3 py-3 text-[11px] leading-snug text-sidebar-foreground/55">
           <div className="truncate">{sidebarFooterLine(profile, portal, client)}</div>
         </div>
       ) : null}

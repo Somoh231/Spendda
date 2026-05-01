@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 const faqs = [
   {
     q: "What does Spendda do, in one sentence?",
-    a: "Spendda takes your spend and payroll files and turns them into clear insights and a monthly report — so you know what changed, what looks off, and what to do about it, without needing an accountant or analyst.",
+    a: "Spendda turns your messy records into a structured data and financial system — so you can run your business with clarity without hiring a finance or data team.",
   },
   {
     q: "Can we start without live accounting integrations?",

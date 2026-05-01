@@ -34,9 +34,9 @@ const cardLink =
 const reveal = "motion-safe:animate-fade-in-up";
 
 const heroProof = [
-  { icon: Shield, text: "No accountant or IT person needed" },
-  { icon: Clock, text: "Works with QuickBooks, Gusto, Square, and Excel" },
-  { icon: Target, text: "First report ready in under 10 minutes" },
+  { icon: Shield, text: "We structure and clean your records — no CFO or data hire required" },
+  { icon: Clock, text: "From first upload to reports you can run the business on — often under 10 minutes" },
+  { icon: Target, text: "Paper exports and messy spreadsheets are welcome" },
 ] as const;
 
 const logoPlaceholders = ["Home care", "Childcare", "Restaurants", "SMEs", "NGOs", "Schools"] as const;
@@ -62,7 +62,7 @@ const industrySolutions = [
   },
   {
     title: "Finance & GRC teams",
-    body: "Anomaly flags, vendor concentration, and executive summaries grounded in your uploaded ledgers — not demo placeholders.",
+    body: "Oversight layer on your ledgers: repeatable reporting, concentration signals, and audit-friendly exports — built from your real files, not placeholders.",
     icon: Briefcase,
     href: "/solutions",
   },
@@ -83,20 +83,20 @@ const industrySolutions = [
 const howSteps = [
   {
     step: "1",
-    title: "Drop your file",
-    body: "CSV, Excel, QuickBooks export, or Gusto payroll. Column mapping and health checks happen automatically — no surprises in your results.",
+    title: "Upload your files or records",
+    body: "CSV, Excel, payroll, or exports — whatever you already have.",
     icon: Upload,
   },
   {
     step: "2",
-    title: "See what's actually happening",
-    body: "Vendors, payroll ratios, anomalies, and location gaps surfaced instantly — in plain English, not finance jargon.",
+    title: "We structure and clean your data",
+    body: "No manual setup, no formatting headaches.",
     icon: Sparkles,
   },
   {
     step: "3",
-    title: "Ship decisions, not decks",
-    body: "Monthly PDF report with your real numbers, top findings, and specific actions — ready to share with your accountant, partner, or investor.",
+    title: "Get reports, insights, and actions",
+    body: "Ready to use, ready to share.",
     icon: FileBarChart,
   },
 ] as const;
@@ -106,21 +106,21 @@ const roiOutcomes = [
     stat: "10×",
     label: "Hours saved monthly",
     detail:
-      "Stop rebuilding your financial summary from scratch every month — upload once and get your report instantly.",
+      "Stop rebuilding summaries from scratch — one structured flow turns uploads into the reports and decisions your business needs.",
     icon: TrendingUp,
   },
   {
     stat: "−35%",
     label: "Earlier problem detection",
     detail:
-      "Catch payroll drift, duplicate invoices, and billing gaps before they hit your bank account.",
+      "Your oversight layer flags payroll drift, duplicate invoices, and billing gaps before they hit cash.",
     icon: Clock,
   },
   {
     stat: "100%",
     label: "Traceable to source rows",
     detail:
-      "Every number in your report links back to the exact rows in your uploaded file — nothing is invented.",
+      "Every figure ties back to your records — a system you can defend, not numbers pulled from thin air.",
     icon: Shield,
   },
 ] as const;
@@ -139,7 +139,7 @@ const pricingPreview = [
   {
     name: "Starter",
     tag: "Prove it fast",
-    blurb: "Single entity, uploads, dashboards, AI Workspace, and core alerts.",
+    blurb: "Single entity, uploads, reporting layer, AI Workspace, and core operational alerts.",
   },
   {
     name: "Growth",
@@ -170,15 +170,15 @@ export default function Home() {
             <div className="flex min-w-0 flex-col justify-center space-y-5">
               <div className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-400/35 bg-blue-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-blue-100 sm:text-xs">
                 <BarChart3 className="h-3.5 w-3.5 shrink-0" />
-                Spend + payroll intelligence
+                Data + finance infrastructure
               </div>
               <div className="space-y-3">
                 <h1 className="max-w-[24ch] text-balance text-[2rem] font-semibold leading-[1.06] tracking-[-0.035em] text-white sm:text-4xl lg:text-[2.65rem] lg:leading-[1.04]">
-                  Finally know which part of your business is making money and which part isn't.
+                  Your data and finance team — without hiring one.
                 </h1>
                 <p className="max-w-xl text-pretty text-[0.9375rem] leading-relaxed text-slate-400 sm:text-lg">
-                  Upload your QuickBooks export, payroll file, or any spreadsheet. Spendda tells you what changed, what's off,
-                  and what to do — in plain language.
+                  Spendda transforms messy spreadsheets and paper records into a working data and financial system. Get clarity,
+                  reports, and decisions without needing a CFO or data analyst.
                 </p>
               </div>
               <div className="flex flex-col gap-2.5 pt-0.5 sm:flex-row sm:flex-wrap">
@@ -209,6 +209,9 @@ export default function Home() {
                   );
                 })}
               </ul>
+              <p className="text-xs leading-relaxed text-slate-500 sm:text-sm">
+                Works with your existing tools — QuickBooks, payroll systems, spreadsheets, or paper records.
+              </p>
             </div>
             <div className="min-w-0 lg:pt-0.5">
               <HeroProductPreview />
@@ -282,10 +285,10 @@ export default function Home() {
             <div className="mx-auto max-w-2xl space-y-2 text-center">
               <p className={`${label} text-blue-400/90`}>How it works</p>
               <h2 className="text-balance text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
-                Upload a file. Know your numbers in minutes.
+                From messy records to a working system — in minutes.
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
-                No rip-and-replace. No setup fees. You prove value on your first upload.
+                Upload your records. We structure, clean, and turn them into a system you can actually run your business on.
               </p>
             </div>
             <div className="grid gap-4 md:grid-cols-3 md:gap-5">
@@ -308,16 +311,49 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Before vs After — anchor + contrast */}
+        <section className={`border-t border-white/10 py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "110ms" }}>
+          <div className={`${shell} space-y-8`}>
+            <div className="mx-auto max-w-3xl space-y-3 text-center">
+              <p className={`${label} text-violet-400/90`}>Before &amp; after Spendda</p>
+              <h2 className="text-balance text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
+                Spendda doesn&apos;t just analyze your data — it becomes the system you run your business on.
+              </h2>
+            </div>
+            <div className="mx-auto grid max-w-4xl gap-4 md:grid-cols-2 md:gap-5">
+              <div className={`p-5 ${card}`}>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Before</h3>
+                <ul className="mt-3 space-y-2 text-sm leading-relaxed text-slate-400">
+                  <li>Scattered spreadsheets</li>
+                  <li>Paper records</li>
+                  <li>No clear reporting</li>
+                  <li>Manual work</li>
+                </ul>
+              </div>
+              <div className={`p-5 ${card}`}>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-emerald-300/90">After</h3>
+                <ul className="mt-3 space-y-2 text-sm leading-relaxed text-slate-400">
+                  <li>Structured data system</li>
+                  <li>Board-ready reports</li>
+                  <li>Continuous visibility</li>
+                  <li>Faster decisions</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* 5 — Product screenshots */}
         <section className={`py-12 sm:py-14 ${reveal}`} style={{ animationDelay: "120ms" }}>
           <div className={`${shell} space-y-6`}>
             <div className="mx-auto max-w-2xl space-y-2 text-center">
               <p className={`${label} text-emerald-400/90`}>Inside the product</p>
               <h2 className="text-balance text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
-                Screens buyers actually ask to see
+                What Spendda becomes for you
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
-                Command center for health, AI Workspace for interrogation, executive exports for circulation.
+                Your reporting system, your financial oversight layer, your data infrastructure, and your decision engine — so
+                you run the business from one structured place.
               </p>
             </div>
             <ProductScreenshots />
@@ -330,7 +366,7 @@ export default function Home() {
             <div className="mx-auto max-w-2xl space-y-2 text-center">
               <p className={`${label} text-amber-400/90`}>WHY OWNERS USE IT</p>
               <h2 className="text-balance text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
-                Less time on spreadsheets. More time running your business.
+                Stop operating without a system. Start running your business with one.
               </h2>
             </div>
             <div className="grid gap-4 md:grid-cols-3 md:gap-5">
@@ -364,8 +400,9 @@ export default function Home() {
                 Meet teams where their data already lives
               </h2>
               <p className="text-sm text-slate-400 sm:text-base">
-                Start with spreadsheets and exports. <span className="font-medium text-slate-200">Automate ingestion</span>{" "}
-                when vendor spend and IT are ready to sign off.
+                We meet you where the records already live — spreadsheets, payroll exports, accounting files.{" "}
+                <span className="font-medium text-slate-200">Automate ingestion</span> when your team is ready to hard-plumb the
+                pipes.
               </p>
             </div>
             <div className="mx-auto flex max-w-3xl flex-wrap justify-center gap-2">
@@ -378,6 +415,9 @@ export default function Home() {
                 </span>
               ))}
             </div>
+            <p className="mx-auto max-w-2xl text-center text-xs leading-relaxed text-slate-500">
+              Used by businesses, organizations, and teams operating without structured systems.
+            </p>
           </div>
         </section>
 
@@ -388,7 +428,7 @@ export default function Home() {
               <div className="max-w-xl space-y-2">
                 <p className={`${label} text-emerald-400/90`}>Pricing</p>
                 <h2 className="text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
-                  Buy the depth of problem you are solving
+                  Choose how much of your data and finance operations we handle
                 </h2>
                 <p className="text-sm text-slate-400 sm:text-base">
                   Three commercial lanes — scoped on a short call so you are not paying for shelf-ware.
@@ -483,7 +523,8 @@ export default function Home() {
                 Stop guessing which part of your business is bleeding money.
               </h2>
               <p className="text-sm leading-relaxed text-slate-400 sm:text-base">
-                Upload your first file in under 5 minutes. No credit card required.
+                Upload your records in under 5 minutes. We&apos;ll structure them into a system you can run on — no credit card
+                required.
               </p>
             </div>
             <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row sm:gap-3">

@@ -16,6 +16,7 @@ import { Percent, Sparkles } from "lucide-react";
 import { SpenddaResponsiveContainer } from "@/components/app/spendda-responsive-container";
 import { AnalyticsScopeControls, useAnalyticsScope } from "@/components/app/analytics-scope";
 import { useWorkspaceData } from "@/components/app/workspace-data-provider";
+import { useProfile } from "@/lib/profile/client";
 import { WorkspaceTrustBanner } from "@/components/app/workspace-trust-banner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -73,6 +74,7 @@ function ScenarioSlider({
 
 export default function ProfitabilityPage() {
   const workspace = useWorkspaceData();
+  const { profile } = useProfile();
   const { scope } = useAnalyticsScope();
   const [revenuePct, setRevenuePct] = React.useState(0);
   const [payrollCutPct, setPayrollCutPct] = React.useState(0);
@@ -98,16 +100,22 @@ export default function ProfitabilityPage() {
   ]);
 
   const base = React.useMemo(() => {
-    const d = demoProfitabilityBaseline();
-    if (uploadSignals) {
-      return {
-        ...d,
-        annualVendorSpend: Math.max(d.annualVendorSpend * 0.35, uploadSignals.annualizedVendorSpend),
-        annualPayroll: Math.max(d.annualPayroll * 0.4, uploadSignals.payrollMonthly * 12),
-      };
-    }
-    return d;
-  }, [uploadSignals]);
+    const d = demoProfitabilityBaseline(profile?.orgType);
+    if (!uploadSignals) return d;
+    const annualVendorSpend =
+      uploadSignals.annualizedVendorSpend > 0
+        ? uploadSignals.annualizedVendorSpend
+        : d.annualVendorSpend;
+    const annualPayroll =
+      uploadSignals.payrollMonthly > 0
+        ? uploadSignals.payrollMonthly * 12
+        : d.annualPayroll;
+    const annualRevenue =
+      uploadSignals.annualizedVendorSpend > 0
+        ? uploadSignals.annualizedVendorSpend * 1.4
+        : d.annualRevenue;
+    return { ...d, annualRevenue, annualVendorSpend, annualPayroll };
+  }, [uploadSignals, profile?.orgType]);
 
   const scenario = React.useMemo(
     () =>
@@ -168,6 +176,28 @@ export default function ProfitabilityPage() {
       </div>
 
       <WorkspaceTrustBanner />
+
+      {uploadSignals && (
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-sm">
+          <span className="font-medium text-foreground">
+            Upload data active —{" "}
+          </span>
+          <span className="text-muted-foreground">
+            expense side anchored to your file
+            ($
+            {Math.round(
+              uploadSignals.annualizedVendorSpend
+            ).toLocaleString()}{" "}
+            annualized spend,{" "}
+            ${Math.round(
+              uploadSignals.payrollMonthly
+            ).toLocaleString()}
+            /mo payroll). Revenue is estimated at
+            1.4× spend — upload a revenue column
+            for exact margins.
+          </span>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {(

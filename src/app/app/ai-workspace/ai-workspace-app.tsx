@@ -23,7 +23,6 @@ import {
   RefreshCw,
   Send,
   Sparkles,
-  Trash2,
   X,
 } from "lucide-react";
 
@@ -39,11 +38,11 @@ import { parseUploadFile } from "@/lib/upload/parse";
 import { describeIngestKind, ingestWorkspaceDataset, ingestWorkspaceUpload } from "@/lib/upload/workspace-ingest";
 import { getUploadedInsights, upsertUploadedInsights } from "@/lib/upload/storage";
 import { upsertWorkspaceDataset, type WorkspaceDataset } from "@/lib/upload/dataset-store";
-import { answerFromDataset } from "@/lib/ai/local-intelligence";
+import { answerFromDataset, formatResponseText } from "@/lib/ai/local-intelligence";
 import { finishCopilotMessage, spendDateCoveragePct, type LocalEngineAnswer } from "@/lib/ai/copilot-finish";
 import { detectMessageIntent, wantsDeepDetail } from "@/lib/ai/intent-routing";
 import type { PayrollRow, SpendTxn } from "@/lib/upload/dataset-store";
-import { buildUploadPilotSnapshot } from "@/lib/workspace/upload-ai-context";
+import { buildChatContext, buildUploadPilotSnapshot } from "@/lib/workspace/upload-ai-context";
 import { mergeWorkspaceDatasetsForAnalyticsScope } from "@/lib/workspace/merge-scope-datasets";
 import { stripMarkdownForClipboard } from "@/lib/ai/workspace-copy";
 import { useProfile } from "@/lib/profile/client";
@@ -522,11 +521,10 @@ export function AiWorkspaceApp() {
     [workspace.datasets, workspace.primaryEntity, workspace.revision, scope.entities, profile?.entities],
   );
   const rangeLabel = `${scope.range.from || "…"} → ${scope.range.to || "…"}`;
-  const spendRowsForStatus =
-    merged.spend?.kind === "spend" ? spendRowsInScope(merged.spend.rows as SpendTxn[], scope.range) : [];
-  const payrollRowsForStatus =
-    merged.payroll?.kind === "payroll" ? (merged.payroll.rows as PayrollRow[]) : [];
-  const totalRowsStatus = spendRowsForStatus.length + payrollRowsForStatus.length;
+  const spendRowsFullForStatus = merged.spend?.kind === "spend" ? (merged.spend.rows as SpendTxn[]) : [];
+  const payrollRowsFullForStatus = merged.payroll?.kind === "payroll" ? (merged.payroll.rows as PayrollRow[]) : [];
+  const totalRowsStatus = spendRowsFullForStatus.length + payrollRowsFullForStatus.length;
+  const hasLocalWorkspaceRows = spendRowsFullForStatus.length > 0 || payrollRowsFullForStatus.length > 0;
 
   const [msgs, setMsgs] = React.useState<ChatMsg[]>([]);
   const [q, setQ] = React.useState("");
@@ -564,6 +562,7 @@ export function AiWorkspaceApp() {
             parsed.msgs.map((m, i) => ({
               ...m,
               id: (m as { id?: string }).id ?? `legacy-${i}`,
+              content: m.role === "assistant" ? formatResponseText(m.content) : m.content,
               streaming: false,
               typing: false,
             })),
@@ -603,7 +602,7 @@ export function AiWorkspaceApp() {
           json.msgs.map((m) => ({
             id: m.id,
             role: m.role,
-            content: m.content,
+            content: m.role === "assistant" ? formatResponseText(m.content) : m.content,
             detailText: m.detailText,
             meta: m.meta ?? null,
             streaming: false,
@@ -693,6 +692,60 @@ export function AiWorkspaceApp() {
     el.style.height = "0px";
     el.style.height = `${Math.min(200, Math.max(44, el.scrollHeight))}px`;
   }, [q]);
+
+  async function attachFromComposerAndSummarize(file: File) {
+    const uploadMsg: ChatMsg = {
+      id: genMsgId(),
+      role: "user",
+      content: `📎 Attached: ${file.name}`,
+    };
+    setMsgs((prev) => {
+      const next = [...prev, uploadMsg];
+      persistSession(next);
+      return next;
+    });
+    void tryPersistCloudMessage({ role: "user", content: uploadMsg.content, meta: null });
+    setUploadBusy(true);
+    try {
+      const ingested = await ingestSpreadsheetCore(file);
+      if (!ingested.ok) {
+        setMsgs((prev) => {
+          const next = [
+            ...prev,
+            {
+              id: genMsgId(),
+              role: "assistant" as const,
+              content: formatResponseText(`I couldn't read that file: ${ingested.error}`),
+              assistantContextBadge: "general" as const,
+            },
+          ];
+          persistSession(next);
+          return next;
+        });
+        return;
+      }
+      const spendDs = ingested.spendDs ?? workspace.spendForEntity;
+      const payrollDs = ingested.payrollDs ?? workspace.payrollForEntity;
+      toast.success("File attached", { description: ingested.filename });
+      await runQuery("Summarize this file for me", { spend: spendDs, payroll: payrollDs }, { skipUserMessage: true });
+    } catch {
+      setMsgs((prev) => {
+        const next = [
+          ...prev,
+          {
+            id: genMsgId(),
+            role: "assistant" as const,
+            content: formatResponseText("Something went wrong reading that file."),
+            assistantContextBadge: "general" as const,
+          },
+        ];
+        persistSession(next);
+        return next;
+      });
+    } finally {
+      setUploadBusy(false);
+    }
+  }
 
   function addPendingFiles(files: FileList | File[]) {
     const list = Array.from(files);
@@ -825,11 +878,12 @@ export function AiWorkspaceApp() {
   }
 
   async function streamAssistantContent(assistantId: string, full: string) {
-    const n = full.length;
+    const displayFull = formatResponseText(full);
+    const n = displayFull.length;
     const step = n < 420 ? Math.max(3, Math.floor(n / 48)) : n < 1600 ? 10 : 18;
     const tickMs = n < 420 ? 12 : n < 1600 ? 9 : 6;
     for (let end = 0; end <= n; end += step) {
-      const slice = full.slice(0, Math.min(n, end + step));
+      const slice = displayFull.slice(0, Math.min(n, end + step));
       await sleep(tickMs);
       setMsgs((prev) =>
         prev.map((m) =>
@@ -921,7 +975,13 @@ export function AiWorkspaceApp() {
         setMsgs((prev) => {
           const next = prev.map((m) =>
             m.id === assistantId
-              ? { ...m, content: msg, streaming: false, typing: false, assistantContextBadge: "upload" as const }
+              ? {
+                  ...m,
+                  content: formatResponseText(msg),
+                  streaming: false,
+                  typing: false,
+                  assistantContextBadge: "upload" as const,
+                }
               : m,
           );
           persistSession(next);
@@ -944,6 +1004,90 @@ export function AiWorkspaceApp() {
         { role: "user" as const, content: trimmed },
       ];
       const messageIntent = detectMessageIntent(text.trim(), priorTurnsForIntent(msgs));
+
+      const useClaude = true;
+      if (useClaude) {
+        try {
+          const hasLocalUpload = Boolean(spendDs ?? payrollDs);
+
+          const chatContext = buildChatContext({
+            dataSource: hasLocalUpload ? "upload" : workspace.dataSource,
+            spendDataset: spendDs ?? workspace.spendForEntity,
+            payrollDataset: payrollDs ?? workspace.payrollForEntity,
+            activeDatasetLabel: workspace.activeDatasetLabel ?? undefined,
+            orgType: profile?.orgType,
+            organizationName: profile?.activeEntity ?? workspace.primaryEntity,
+            entity: entityForAi,
+          });
+
+          console.log("[Claude context]", {
+            dataSource: chatContext.dataSource,
+            rowCount: chatContext.rowCount,
+            totalSpend: chatContext.totalSpend,
+            topVendors: chatContext.topVendors,
+          });
+
+          const history = conversationForEngine
+            .filter((m) => m.role === "user" || m.role === "assistant")
+            .slice(-10)
+            .map((m) => ({
+              role: m.role as "user" | "assistant",
+              content: String(m.content),
+            }));
+
+          const res = await fetch("/api/ai/chat", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              messages: history,
+              context: chatContext,
+              role: profile?.role,
+            }),
+          });
+
+          if (res.ok) {
+            const data = (await res.json()) as {
+              ok?: boolean;
+              text?: string;
+              error?: string;
+            };
+
+            if (data.ok && data.text) {
+              await streamAssistantContent(assistantId, data.text);
+              const formatted = formatResponseText(data.text);
+              setMsgs((prev) => {
+                const next = prev.map((m) =>
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        content: formatted,
+                        assistantContextBadge:
+                          chatContext.dataSource === "upload" ? ("upload" as const) : ("general" as const),
+                        streaming: false,
+                        typing: false,
+                        followUps: [],
+                      }
+                    : m,
+                );
+                persistSession(next);
+                return next;
+              });
+              void tryPersistCloudMessage({
+                role: "assistant",
+                content: formatted,
+                meta: null,
+              });
+              setQ("");
+              requestAnimationFrame(() => textareaRef.current?.focus());
+              setBusy(false);
+              return;
+            }
+          }
+          console.warn("Claude API unavailable, using local engine");
+        } catch (claudeErr) {
+          console.warn("Claude API error, falling back:", claudeErr);
+        }
+      }
 
       if (!spendDs && !payrollDs && workspace.dataSource !== "demo") {
         const localRaw = answerFromDataset({
@@ -975,7 +1119,7 @@ export function AiWorkspaceApp() {
             m.id === assistantId
               ? {
                   ...m,
-                  content: local.text,
+                  content: formatResponseText(local.text),
                   detailText: local.detailText,
                   streaming: false,
                   typing: false,
@@ -990,7 +1134,12 @@ export function AiWorkspaceApp() {
           persistSession(next);
           return next;
         });
-        void tryPersistCloudMessage({ role: "assistant", content: local.text, detailText: local.detailText, meta: local.meta || null });
+        void tryPersistCloudMessage({
+          role: "assistant",
+          content: formatResponseText(local.text),
+          detailText: local.detailText,
+          meta: local.meta || null,
+        });
         setQ("");
         requestAnimationFrame(() => textareaRef.current?.focus());
         return;
@@ -1011,21 +1160,28 @@ export function AiWorkspaceApp() {
         /\b(summarize|summary|executive summary|what looks suspicious|suspicious|anomal|top vendors?|vendor|department|overspend|payroll|wages|salary|forecast|next quarter|duplicate)\b/i.test(
           qLower,
         );
-      if (wantsEndpoint && workspace.dataSource !== "demo") {
+      if (wantsEndpoint && workspace.dataSource !== "demo" && workspace.dataSource !== "upload") {
         try {
           const insightText = await tryInsightsAnswer(qLower, scope.range);
           if (insightText) {
+            const insightDisplay = formatResponseText(insightText);
             await streamAssistantContent(assistantId, insightText);
             setMsgs((prev) => {
               const next = prev.map((m) =>
                 m.id === assistantId
-                  ? { ...m, content: insightText, streaming: false, typing: false, assistantContextBadge: "upload" as const }
+                  ? {
+                      ...m,
+                      content: insightDisplay,
+                      streaming: false,
+                      typing: false,
+                      assistantContextBadge: "upload" as const,
+                    }
                   : m,
               );
               persistSession(next);
               return next;
             });
-            void tryPersistCloudMessage({ role: "assistant", content: insightText, meta: null });
+            void tryPersistCloudMessage({ role: "assistant", content: insightDisplay, meta: null });
             setQ("");
             requestAnimationFrame(() => textareaRef.current?.focus());
             return;
@@ -1093,7 +1249,7 @@ export function AiWorkspaceApp() {
           m.id === assistantId
             ? {
                 ...m,
-                content: local.text,
+                content: formatResponseText(local.text),
                 detailText: mergedDetail || undefined,
                 streaming: false,
                 typing: false,
@@ -1111,7 +1267,7 @@ export function AiWorkspaceApp() {
 
       void tryPersistCloudMessage({
         role: "assistant",
-        content: local.text,
+        content: formatResponseText(local.text),
         detailText: local.detailText,
         meta: local.meta || null,
       });
@@ -1319,42 +1475,43 @@ export function AiWorkspaceApp() {
         composerDrag && "ring-2 ring-primary/30 ring-offset-2 ring-offset-background",
       )}
     >
-      <header className="shrink-0 border-b border-border bg-card/80 px-8 py-3 backdrop-blur-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-[15px] font-medium tracking-tight text-foreground">AI workspace</h2>
-            <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">
+      <header className="shrink-0 border-b border-border/55 bg-background px-4 py-3 sm:px-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-medium text-foreground">AI workspace</h2>
+              {hasDataset || hasLocalWorkspaceRows ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  {workspace.activeDatasetLabel ?? "Data loaded"}
+                  {totalRowsStatus > 0 ? ` · ${totalRowsStatus} rows` : ""}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  No data — upload a file to begin
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
               Ask anything about your data — specific answers, not generic advice
             </p>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <span
-              className={cn(
-                "inline-flex max-w-[min(100%,280px)] items-center rounded-full border px-3 py-1 text-xs font-medium",
-                workspace.dataSource === "upload" &&
-                  "border-emerald-500/35 bg-emerald-500/10 text-emerald-950 dark:text-emerald-50",
-                workspace.dataSource === "demo" && "border-sky-500/35 bg-sky-500/10 text-sky-950 dark:text-sky-50",
-                workspace.dataSource === "none" && "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-50",
-              )}
-              title={workspace.activeDatasetLabel || undefined}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2.5 text-[11px] text-muted-foreground"
+              onClick={clearChat}
             >
-              <span className="truncate">
-                {workspace.dataSource === "upload" && workspace.activeDatasetLabel
-                  ? `✓ ${workspace.activeDatasetLabel} · ${totalRowsStatus.toLocaleString()} rows`
-                  : workspace.dataSource === "demo"
-                    ? "Demo data"
-                    : "⚠ No data — upload a file to begin"}
-              </span>
-            </span>
-            <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground" onClick={clearChat}>
-              <Trash2 className="mr-1 h-3 w-3" />
-              Clear
+              Clear chat
             </Button>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 px-2 text-xs text-muted-foreground"
+              className="h-7 px-2.5 text-[11px] text-muted-foreground"
               onClick={() => void exportSessionCsv()}
             >
               CSV
@@ -1363,7 +1520,7 @@ export function AiWorkspaceApp() {
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 px-2 text-xs text-muted-foreground"
+              className="h-7 px-2.5 text-[11px] text-muted-foreground"
               onClick={() => void exportSessionPdf()}
             >
               PDF
@@ -1393,7 +1550,7 @@ export function AiWorkspaceApp() {
         {/* Messages — scrolls; composer stays pinned below */}
         <div
           ref={scrollRef}
-          className="ai-workspace-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-8 py-6"
+          className="ai-workspace-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-5 py-5 sm:px-8 sm:py-6"
         >
           {!hasDataset ? (
             <div className="mx-auto flex max-w-lg flex-col items-center gap-4 py-6 text-center">
@@ -1435,7 +1592,7 @@ export function AiWorkspaceApp() {
             </div>
           ) : null}
 
-          <div className="mx-auto flex w-full min-w-0 flex-col gap-5 pb-2 pt-0">
+          <div className="mx-auto flex w-full min-w-0 max-w-[min(100%,720px)] flex-col gap-5 pb-2 pt-0">
             {msgs.length > 0 ? (
               <div className="flex justify-center py-1">
                 <span className="rounded-full bg-muted/70 px-3 py-0.5 text-[11px] text-muted-foreground">Today</span>
@@ -1450,8 +1607,8 @@ export function AiWorkspaceApp() {
                   >
                     S
                   </div>
-                  <div className="flex min-w-0 max-w-[72%] flex-col gap-1.5">
-                    <div className="group/msg relative overflow-x-auto rounded-[12px] rounded-tl-[3px] border-[0.5px] border-border bg-card px-3.5 py-2.5 text-sm text-foreground shadow-sm">
+                  <div className="flex min-w-0 flex-1 max-w-full flex-col gap-1.5">
+                    <div className="relative min-w-0 max-w-[min(100%,680px)] rounded-[12px] rounded-tl-[3px] border border-border/50 bg-card px-4 py-3 text-foreground">
                       {m.typing && !m.content ? (
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <TypingDots />
@@ -1527,52 +1684,53 @@ export function AiWorkspaceApp() {
                             </details>
                           ) : null}
 
-                          {m.content && !m.streaming && (m.meta?.sources || m.meta?.trustNote) ? (
+                          {false && (
                             <details className="mt-2 rounded-lg border border-border bg-muted/20 text-muted-foreground [&_summary]:cursor-pointer [&_summary]:list-none [&_summary::-webkit-details-marker]:hidden">
                               <summary className="px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/90">
                                 Context &amp; sources
                               </summary>
                               <div className="max-h-[min(40vh,20rem)] space-y-2 overflow-y-auto border-t border-border px-2.5 py-2 text-[11px] leading-relaxed">
-                                {m.meta?.confidencePct !== undefined && m.meta.confidencePct > 0 ? (
+                                {m.meta?.confidencePct !== undefined && (m.meta?.confidencePct ?? 0) > 0 ? (
                                   <div>
                                     <span className="font-medium text-foreground/80">Confidence · </span>
-                                    {Math.round(m.meta.confidencePct)}%
+                                    {Math.round(m.meta?.confidencePct ?? 0)}%
                                   </div>
                                 ) : null}
                                 {m.meta?.trustNote ? (
                                   <div>
                                     <span className="font-medium text-foreground/80">Scope · </span>
-                                    <WorkspaceMarkdown content={m.meta.trustNote} />
+                                    <WorkspaceMarkdown content={m.meta?.trustNote ?? ""} />
                                   </div>
                                 ) : null}
                                 {m.meta?.sources?.spend ? (
                                   <div>
-                                    Spend file · {m.meta.sources.spend.rows.toLocaleString()} rows ({m.meta.sources.spend.filename})
+                                    Spend file · {m.meta?.sources?.spend?.rows.toLocaleString()} rows (
+                                    {m.meta?.sources?.spend?.filename})
                                   </div>
                                 ) : null}
                                 {m.meta?.sources?.payroll ? (
                                   <div>
-                                    Payroll file · {m.meta.sources.payroll.rows.toLocaleString()} rows (
-                                    {m.meta.sources.payroll.filename})
+                                    Payroll file · {m.meta?.sources?.payroll?.rows.toLocaleString()} rows (
+                                    {m.meta?.sources?.payroll?.filename})
                                   </div>
                                 ) : null}
                                 {m.meta?.dataGaps?.length ? (
                                   <div className="text-amber-900/90 dark:text-amber-200/90">
                                     <span className="font-medium">Data gaps · </span>
-                                    {m.meta.dataGaps.join(" · ")}
+                                    {m.meta?.dataGaps?.join(" · ")}
                                   </div>
                                 ) : null}
                               </div>
                             </details>
-                          ) : null}
+                          )}
 
                           {m.content && !m.streaming ? (
-                            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-2.5">
+                            <div className="mt-2 flex items-center gap-3">
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                                className="h-auto p-0 text-[10px] text-muted-foreground hover:text-foreground"
                                 onClick={() =>
                                   void copyMessage(`${m.content}${m.detailText ? `\n\n---\n\n${m.detailText}` : ""}`)
                                 }
@@ -1584,7 +1742,7 @@ export function AiWorkspaceApp() {
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                                className="h-auto p-0 text-[10px] text-muted-foreground hover:text-foreground"
                                 disabled={busy}
                                 onClick={() => retryFromAssistantIndex(i)}
                               >
@@ -1600,15 +1758,16 @@ export function AiWorkspaceApp() {
                     {m.assistantContextBadge && !m.streaming && m.content ? (
                       <span
                         className={cn(
-                          "inline-flex max-w-full rounded-full px-2 py-0.5 text-[10px] font-medium leading-snug",
                           m.assistantContextBadge === "upload" &&
-                            "bg-emerald-500/12 text-emerald-900 dark:text-emerald-100/90",
-                          m.assistantContextBadge === "demo" && "bg-sky-500/12 text-sky-900 dark:text-sky-100/90",
-                          m.assistantContextBadge === "general" && "bg-muted text-muted-foreground",
+                            "mt-1.5 inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400",
+                          m.assistantContextBadge === "demo" &&
+                            "mt-1.5 inline-flex items-center gap-1 text-[10px] font-medium text-blue-600 dark:text-blue-400",
+                          m.assistantContextBadge === "general" &&
+                            "mt-1.5 inline-flex items-center gap-1 text-[10px] text-muted-foreground",
                         )}
                       >
                         {m.assistantContextBadge === "upload"
-                          ? "Based on your uploaded data"
+                          ? "✓ Based on your uploaded data"
                           : m.assistantContextBadge === "demo"
                             ? "Demo data"
                             : "Conversation · not a data query"}
@@ -1634,8 +1793,8 @@ export function AiWorkspaceApp() {
                 </div>
               ) : (
                 <div key={m.id} className="flex w-full min-w-0 justify-end gap-2">
-                  <div className="flex min-w-0 max-w-[72%] flex-col items-end gap-1">
-                    <div className="rounded-[12px] rounded-tr-[3px] bg-secondary px-3.5 py-2.5 text-sm leading-relaxed text-secondary-foreground">
+                  <div className="flex min-w-0 flex-1 max-w-full flex-col items-end gap-1">
+                    <div className="rounded-[12px] rounded-tr-[3px] bg-secondary px-4 py-3 text-foreground">
                       <div className="min-w-0 whitespace-pre-wrap break-words">{m.content}</div>
                     </div>
                   </div>
@@ -1656,7 +1815,7 @@ export function AiWorkspaceApp() {
                 >
                   S
                 </div>
-                <div className="flex min-w-0 max-w-[72%] items-center gap-2 rounded-[12px] rounded-tl-[3px] border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+                <div className="flex min-w-0 flex-1 max-w-full items-center gap-2 rounded-[12px] rounded-tl-[3px] border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
                   Working…
                 </div>
@@ -1687,7 +1846,7 @@ export function AiWorkspaceApp() {
           }}
         >
           <div className="mx-auto w-full px-8">
-            <p className="mb-1.5 text-[10px] text-muted-foreground">Try asking:</p>
+            <p className="mb-2 text-[10px] text-muted-foreground">Try asking:</p>
             <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               {getWorkspaceSuggestionChips(hasDataset, profile?.orgType).map((p) => (
                 <button
@@ -1733,7 +1892,12 @@ export function AiWorkspaceApp() {
               onChange={(e) => {
                 const fl = e.currentTarget.files;
                 e.currentTarget.value = "";
-                if (fl?.length) addPendingFiles(fl);
+                if (!fl?.length) return;
+                if (fl.length === 1) {
+                  void attachFromComposerAndSummarize(fl[0]!);
+                  return;
+                }
+                addPendingFiles(fl);
               }}
             />
             <div className="mt-3 flex items-end gap-2 rounded-lg border border-border bg-muted/50 p-2">

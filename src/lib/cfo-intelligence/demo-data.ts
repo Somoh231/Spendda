@@ -126,14 +126,46 @@ export type ProfitabilityBaseline = {
   revenueGrossMarginPct: number;
 };
 
-export function demoProfitabilityBaseline(): ProfitabilityBaseline {
-  return {
+export function demoProfitabilityBaseline(
+  orgType?: string,
+): ProfitabilityBaseline {
+  const isSme = [
+    "Home Care Agency",
+    "Childcare Center",
+    "Restaurant Group",
+    "SME",
+  ].includes(orgType ?? "");
+
+  const defaultReturn: ProfitabilityBaseline = {
     annualRevenue: 4_280_000,
     annualVendorSpend: 1_020_000,
     annualPayroll: 1_860_000,
     annualFixedOverhead: 640_000,
     revenueGrossMarginPct: 0.58,
   };
+
+  if (isSme) {
+    const annualRevenue =
+      orgType === "Home Care Agency"
+        ? 580_000
+        : orgType === "Childcare Center"
+          ? 420_000
+          : orgType === "Restaurant Group"
+            ? 890_000
+            : 380_000;
+    const annualVendorSpend = Math.round(annualRevenue * 0.38);
+    const annualPayroll = Math.round(annualRevenue * 0.52);
+    const annualFixedOverhead = Math.round(annualRevenue * 0.06);
+    return {
+      ...defaultReturn,
+      annualRevenue,
+      annualVendorSpend,
+      annualPayroll,
+      annualFixedOverhead,
+    };
+  }
+
+  return defaultReturn;
 }
 
 export function buildProfitabilityScenario(

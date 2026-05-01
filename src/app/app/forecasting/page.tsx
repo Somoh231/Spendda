@@ -199,24 +199,51 @@ export default function ForecastingPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-muted-foreground">
-              Retirement wave
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="text-2xl font-semibold tracking-tight">
-                {cards ? (cards.retirementWavePct > 0 || !fromUpload ? `${cards.retirementWavePct.toFixed(1)}%` : "—") : "—"}
+        {!fromUpload ? (
+          <Card className="shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-muted-foreground">
+                Retirement wave
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="text-2xl font-semibold tracking-tight">
+                  {cards
+                    ? `${cards.retirementWavePct.toFixed(1)}%`
+                    : "—"}
+                </div>
+                <Users className="h-4 w-4 text-muted-foreground" />
               </div>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <div className="mt-2 text-xs text-muted-foreground">
-              {fromUpload ? "Not inferred from typical payroll export columns." : "Projected eligible retirements in 12 months."}
-            </div>
-          </CardContent>
-        </Card>
+              <div className="mt-2 text-xs text-muted-foreground">
+                Projected eligible retirements in 12 months.
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-muted-foreground">
+                Payroll ratio
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="text-2xl font-semibold tracking-tight">
+                  {cards
+                    ? `${Math.min(99, Math.round(cards.payrollGrowthPct * 12))}%`
+                    : "—"}
+                </div>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">
+                Payroll as % of total spend in range.
+                Target varies by industry — home care
+                aim for under 60%.
+              </div>
+            </CardContent>
+          </Card>
+        )}
         <Card className="shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-muted-foreground">
@@ -485,11 +512,36 @@ export default function ForecastingPage() {
             <CardTitle className="text-base">Action center</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3">
-            {[
-              { k: "Reforecast Q4 hiring plan", v: "Scenario model + CFO brief" },
-              { k: "Freeze approvals in Operations", v: "Pending evidence packets" },
-              { k: "Reduce overtime in Nursing", v: "Projected rise in 3 weeks" },
-            ].map((x) => (
+            {(fromUpload
+              ? [
+                  {
+                    k: "Review flagged transactions",
+                    v: "Check anomalies from your upload",
+                  },
+                  {
+                    k: "Upload prior month for comparison",
+                    v: "Enables month-over-month trending",
+                  },
+                  {
+                    k: "Generate monthly report",
+                    v: "Export findings as PDF",
+                  },
+                ]
+              : [
+                  {
+                    k: "Reforecast Q4 hiring plan",
+                    v: "Scenario model + CFO brief",
+                  },
+                  {
+                    k: "Freeze approvals in Operations",
+                    v: "Pending evidence packets",
+                  },
+                  {
+                    k: "Reduce overtime in Nursing",
+                    v: "Projected rise in 3 weeks",
+                  },
+                ]
+            ).map((x) => (
               <div key={x.k} className="rounded-2xl border bg-background p-4 shadow-sm">
                 <div className="text-sm font-semibold">{x.k}</div>
                 <div className="mt-2 text-xs text-muted-foreground">{x.v}</div>

@@ -16,11 +16,191 @@ import {
   buildStructuredWorkspaceAnalytics,
   formatStructuredAnalyticsNarrative,
   structuredAnalyticsToJsonBlock,
+  type StructuredWorkspaceAnalytics,
 } from "@/lib/analytics/structured-workspace-analytics";
 
 function money(n: number) {
   const v = Number.isFinite(n) ? n : 0;
   return `$${Math.round(v).toLocaleString()}`;
+}
+
+function spendRowDateBounds(rows: SpendTxn[]): { from: string | null; to: string | null } {
+  let from: string | null = null;
+  let to: string | null = null;
+  for (const r of rows) {
+    const d = (r.date || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+    if (!from || d < from) from = d;
+    if (!to || d > to) to = d;
+  }
+  return { from, to };
+}
+
+function humanSpendDateRangeLabel(rows: SpendTxn[], range: DateRange): string {
+  const dr = spendRowDateBounds(rows);
+  const from = dr.from || range.from || null;
+  const to = dr.to || range.to || null;
+  const fmt = (iso: string) => {
+    const d = new Date(`${iso}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  };
+  if (from && to) return `${fmt(from)} – ${fmt(to)}`;
+  if (from) return fmt(from);
+  if (to) return fmt(to);
+  return "selected date range";
+}
+
+function isVendorNameUnknown(name: string | undefined | null): boolean {
+  const t = (name || "").trim();
+  return !t || t.toLowerCase() === "unknown";
+}
+
+function savingsLineFromLooseOpportunities(opps: unknown[]): string {
+  const rows = opps
+    .filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === "object" && !Array.isArray(x))
+    .map((x) => ({
+      title: typeof x.title === "string" ? x.title : "",
+      estimatedImpactUsd: Number(x.estimatedImpactUsd),
+    }))
+    .filter((x) => x.title && Number.isFinite(x.estimatedImpactUsd) && x.estimatedImpactUsd > 0)
+    .slice(0, 4);
+  if (!rows.length) return "";
+  const parts = rows.map((c) => {
+    const short = c.title.replace(/\.$/, "");
+    return `~${money(c.estimatedImpactUsd)} from ${short.toLowerCase()}`;
+  });
+  return `\n\n**Potential savings:** ${parts.join(", ")}.`;
+}
+
+function formatSavingsOpportunitiesLine(structured: StructuredWorkspaceAnalytics): string {
+  return savingsLineFromLooseOpportunities(structured.costSavingsOpportunities as unknown[]);
+}
+
+function parsedJsonToReadableProse(parsed: unknown): string | null {
+  if (parsed == null) return null;
+  if (Array.isArray(parsed)) {
+    const items = parsed.map((item) => {
+      if (item && typeof item === "object") {
+        const o = item as Record<string, unknown>;
+        const title = typeof o.title === "string" ? o.title : "";
+        const rationale = typeof o.rationale === "string" ? o.rationale : "";
+        if (title && rationale) {
+          const raw = o.estimatedImpactUsd;
+          const impact =
+            raw !== undefined && raw !== null && Number.isFinite(Number(raw))
+              ? ` (~${money(Number(raw))} potential)`
+              : "";
+          return `**${title}**${impact}\n${rationale}`;
+        }
+        if (title) return `**${title}**`;
+      }
+      return String(item);
+    });
+    return items.join("\n\n");
+  }
+  if (typeof parsed === "object") {
+    const o = parsed as Record<string, unknown>;
+    if (typeof o.summaryLine === "string" && o.summaryLine.trim()) {
+      let out = o.summaryLine.trim();
+      const opps = o.costSavingsOpportunities;
+      if (Array.isArray(opps) && opps.length) {
+        const line = savingsLineFromLooseOpportunities(opps);
+        if (line) out += line;
+      }
+      return out;
+    }
+    const opps = o.costSavingsOpportunities;
+    if (Array.isArray(opps) && opps.length) {
+      const joined = parsedJsonToReadableProse(opps);
+      if (joined) return joined;
+    }
+  }
+  return null;
+}
+
+function extractBalancedJson(input: string, startIdx: number): string | null {
+  const head = input[startIdx];
+  if (head !== "{" && head !== "[") return null;
+  const stack: ("}" | "]")[] = [];
+  let inStr = false;
+  let esc = false;
+  for (let i = startIdx; i < input.length; i++) {
+    const c = input[i]!;
+    if (inStr) {
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (c === "\\") {
+        esc = true;
+        continue;
+      }
+      if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+      continue;
+    }
+    if (c === "{") {
+      stack.push("}");
+      continue;
+    }
+    if (c === "[") {
+      stack.push("]");
+      continue;
+    }
+    if (c === "}" || c === "]") {
+      const want = stack.pop();
+      if (!want || c !== want) return null;
+      if (stack.length === 0) return input.slice(startIdx, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Turns accidental raw JSON (or fenced ```json blocks) in assistant text into readable prose.
+ */
+export function formatResponseText(text: string): string {
+  if (!text || typeof text !== "string") return text;
+  let out = text.replace(/```json\s*([\s\S]*?)```/gi, (_full, inner: string) => {
+    try {
+      const parsed = JSON.parse(String(inner).trim());
+      return parsedJsonToReadableProse(parsed) ?? _full;
+    } catch {
+      return _full;
+    }
+  });
+  const trimmed = out.trim();
+  if (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  ) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const prose = parsedJsonToReadableProse(parsed);
+      if (prose) return prose;
+    } catch {
+      /* keep */
+    }
+  }
+  const objStart = out.indexOf("{");
+  const arrStart = out.indexOf("[");
+  const starts = [objStart, arrStart].filter((i) => i >= 0).sort((a, b) => a - b);
+  for (const s of starts) {
+    const chunk = extractBalancedJson(out, s);
+    if (!chunk || chunk.length < 3) continue;
+    try {
+      const parsed = JSON.parse(chunk);
+      const prose = parsedJsonToReadableProse(parsed);
+      if (prose) return `${out.slice(0, s)}${prose}${out.slice(s + chunk.length)}`.replace(/\n{3,}/g, "\n\n").trim();
+    } catch {
+      /* continue */
+    }
+  }
+  return out;
 }
 
 function topN<T>(arr: T[], n: number) {
@@ -851,41 +1031,57 @@ export function answerFromDataset(opts: {
     const spendTotal = spend.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0);
     const spendFlagged = spend.filter((t) => t.flags.length).length;
     const payrollHigh = payroll.filter((p) => p.risk === "High").length;
-    const totalRecords = spend.length + payroll.length;
-    const bullets: string[] = [];
-    bullets.push(`**${totalRecords.toLocaleString()}** records in scope for **${entity}**`);
-    if (spend.length) {
-      if (spendTotal > 0) {
-        bullets.push(`Mapped spend totals **${money(spendTotal)}** across **${spend.length.toLocaleString()}** spend rows`);
-      } else {
-        bullets.push(
-          `No positive amounts in mapped spend fields (**${spend.length.toLocaleString()}** rows) — check column mapping`,
-        );
-      }
-      bullets.push(
-        spendFlagged
-          ? `**${spendFlagged.toLocaleString()}** spend rows flagged for review`
-          : `No spend rows flagged in this pass`,
-      );
-    } else if (payroll.length) {
-      bullets.push("Spend not merged in this view — payroll-only dataset");
-    }
-    if (payroll.length) {
-      bullets.push(
-        payrollHigh
-          ? `Payroll **${payroll.length.toLocaleString()}** rows · **${payrollHigh}** high-risk (heuristic)`
-          : `Payroll **${payroll.length.toLocaleString()}** rows · no high-risk rows flagged`,
-      );
-    }
-    const schema = uploadAnalytics?.schema;
-    if (schema && spend.length && schema.spendDeptCoveragePct >= 40) {
-      bullets.push(
-        `Department coverage **${Math.round(schema.spendDeptCoveragePct)}%** — ready for department breakdown`,
-      );
-    }
+    const dateLabel = humanSpendDateRangeLabel(spend, range);
+    const topVendor = uploadAnalytics?.vendorConcentration.topVendors[0];
+    const vendorUnknown = !topVendor || isVendorNameUnknown(topVendor.name);
+    const vendorWarning =
+      spend.length && vendorUnknown
+        ? "\n\n⚠️ **Vendor column not detected** — your file may use a different column name. Try re-uploading and mapping the vendor column manually in **Upload Data**."
+        : "";
+
+    const savingsFromStructured = structured ? formatSavingsOpportunitiesLine(structured) : "";
+    const recBullets = uploadAnalytics?.recommendations?.length
+      ? `\n\n**Recommendations:**\n${uploadAnalytics.recommendations.slice(0, 8).map((r) => `- ${r}`).join("\n")}`
+      : "";
+
     const exec = /\b(executive summary|board|exec)\b/i.test(ql);
     const heading = exec ? "### Executive snapshot" : "### Quick summary";
-    const text = `${heading}\n\n${bullets.map((b) => `• ${b}`).join("\n")}`;
+
+    let body = "";
+    if (spend.length) {
+      const spendLine =
+        spendTotal > 0
+          ? `Your uploaded spend data shows **${money(spendTotal)}** across **${spend.length.toLocaleString()}** rows (${dateLabel}).`
+          : `Spend rows in scope (**${spend.length.toLocaleString()}**) have **no positive mapped amounts** — check column mapping in **Upload Data**.`;
+      const topLine = vendorUnknown
+        ? "**Top vendor:** Vendor name not detected — check that your file has a vendor or payee column"
+        : `**Top vendor:** ${topVendor!.name} — ${money(topVendor!.spend)} (${topVendor!.pct.toFixed(1)}% of spend)`;
+      const flagsLine =
+        spendFlagged > 0
+          ? `**Flags for review:** ${spendFlagged.toLocaleString()} spend rows carry anomaly signals.`
+          : "**Flags for review:** No anomaly flags on spend rows in this pass.";
+      body = `${spendLine}\n\n${topLine}.\n\n${flagsLine}${savingsFromStructured}${recBullets}${vendorWarning}`;
+    } else if (payroll.length) {
+      body =
+        `**${entity}** · payroll-only view: **${payroll.length.toLocaleString()}** rows (${dateLabel}). ` +
+        (payrollHigh
+          ? `**${payrollHigh}** rows flagged high-risk (heuristic).`
+          : "No high-risk payroll rows flagged in this pass.");
+    } else {
+      body = `No spend or payroll rows in scope for **${entity}** — upload a file or widen the date range.`;
+    }
+
+    if (payroll.length && spend.length) {
+      body += `\n\n**Payroll:** **${payroll.length.toLocaleString()}** rows` +
+        (payrollHigh ? ` · **${payrollHigh}** high-risk (heuristic).` : " · no high-risk rows flagged.");
+    }
+
+    const schema = uploadAnalytics?.schema;
+    if (schema && spend.length && schema.spendDeptCoveragePct >= 40) {
+      body += `\n\n_Department coverage **${Math.round(schema.spendDeptCoveragePct)}%** — ready for department breakdown._`;
+    }
+
+    const text = `${heading}\n\n${body}`;
     const engine =
       uploadAnalytics && (spend.length || payroll.length) ? formatAnalyticsEngineBlock(uploadAnalytics, entity) : "";
 
@@ -893,11 +1089,19 @@ export function answerFromDataset(opts: {
     const topV = uploadAnalytics?.vendorConcentration.topVendors;
     if (topV?.length) {
       for (const v of topN(topV, 3)) {
-        kpis.push({
-          label: v.name.length > 18 ? `${v.name.slice(0, 18)}…` : v.name,
-          value: money(v.spend),
-          hint: `${v.pct.toFixed(1)}% of spend`,
-        });
+        if (isVendorNameUnknown(v.name)) {
+          kpis.push({
+            label: "Vendor not detected",
+            value: money(v.spend),
+            hint: `${v.pct.toFixed(1)}% of rows · map vendor column`,
+          });
+        } else {
+          kpis.push({
+            label: v.name.length > 18 ? `${v.name.slice(0, 18)}…` : v.name,
+            value: money(v.spend),
+            hint: `${v.pct.toFixed(1)}% of spend`,
+          });
+        }
       }
     } else if (spend.length) {
       kpis.push({
@@ -955,9 +1159,14 @@ export function answerFromDataset(opts: {
     };
   }
 
+  const tv = uploadAnalytics?.vendorConcentration.topVendors[0];
+  const vendorHint =
+    tv && !isVendorNameUnknown(tv.name)
+      ? `top vendor **${tv.name}**`
+      : "vendor column may need mapping in **Upload Data**";
   const hint =
     hasAny && uploadAnalytics
-      ? `\n\nQuick read: **${money(uploadAnalytics.totals.spendPositive)}** spend · top vendor **${uploadAnalytics.vendorConcentration.topVendors[0]?.name || "—"}** — try **summarize**.`
+      ? `\n\nQuick read: **${money(uploadAnalytics.totals.spendPositive)}** spend · ${vendorHint} — try **summarize**.`
       : "";
 
   return {

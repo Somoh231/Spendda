@@ -46,19 +46,26 @@ export default function CashFlowRadarPage() {
 
   const debtService = React.useMemo(() => loanKpis(getDemoLoans()).monthlyDebtService, []);
 
-  const burn30 = React.useMemo(() => {
-    if (uploadSignals) {
-      const avgSpend = averageMonthlySpendFromSeries(uploadSignals.monthlySpendSeries) || uploadSignals.spendInRange;
-      return uploadSignals.payrollMonthly + avgSpend + debtService * 0.35;
-    }
-    return 420_000;
-  }, [uploadSignals, debtService]);
-
   const openingCash = React.useMemo(() => {
     if (uploadSignals) {
-      return Math.max(900_000, uploadSignals.payrollMonthly * 10 + uploadSignals.spendInRange * 4);
+      const floor = uploadSignals.payrollMonthly * 2;
+      const estimated =
+        uploadSignals.payrollMonthly * 3 +
+        uploadSignals.spendInRange * 1.5;
+      return Math.max(floor, estimated);
     }
     return 1_850_000;
+  }, [uploadSignals]);
+
+  const burn30 = React.useMemo(() => {
+    if (uploadSignals) {
+      const avgSpend =
+        averageMonthlySpendFromSeries(
+          uploadSignals.monthlySpendSeries
+        ) || uploadSignals.spendInRange;
+      return uploadSignals.payrollMonthly + avgSpend;
+    }
+    return 420_000;
   }, [uploadSignals]);
 
   const dailyNetBurn = React.useMemo(() => Math.max(1200, burn30 / 30), [burn30]);
@@ -80,9 +87,12 @@ export default function CashFlowRadarPage() {
   }, [forecast, dailyNetBurn]);
 
   const obligations = React.useMemo(() => {
-    const nextPayroll = uploadSignals?.payrollMonthly ?? 210_000;
-    const vendor = uploadSignals?.spendInRange ?? 185_000;
-    return nextPayroll + vendor * 0.22 + debtService;
+    const nextPayroll =
+      uploadSignals?.payrollMonthly ?? 210_000;
+    const vendor =
+      uploadSignals?.spendInRange ?? 185_000;
+    const debt = uploadSignals ? 0 : debtService;
+    return nextPayroll + vendor * 0.22 + debt;
   }, [uploadSignals, debtService]);
 
   const riskScore = React.useMemo(() => {
@@ -99,11 +109,25 @@ export default function CashFlowRadarPage() {
       severity: uploadSignals && uploadSignals.payrollMonthly > burn30 * 0.55 ? "High" : "Medium",
       detail: "Payroll remains the largest fixed outflow in the modeled window — confirm accruals before close.",
     });
-    list.push({
-      title: "Debt payment pressure",
-      severity: debtService > burn30 * 0.25 ? "High" : "Low",
-      detail: `Modeled term/amort payments add ~${formatMoney(debtService)} / month on top of operating burn.`,
-    });
+    if (!uploadSignals) {
+      list.push({
+        title: "Debt payment pressure",
+        severity: debtService > burn30 * 0.25
+          ? "High"
+          : "Low",
+        detail: `Modeled term/amort payments add ~${formatMoney(debtService)} / month on top of operating burn.`,
+      });
+    } else {
+      list.push({
+        title: "Vendor spend concentration",
+        severity:
+          uploadSignals.savingsOpportunity30d >
+          uploadSignals.spendInRange * 0.15
+            ? "High"
+            : "Medium",
+        detail: `Top vendor concentration detected — ${formatMoney(uploadSignals.savingsOpportunity30d)} in potentially recoverable spend.`,
+      });
+    }
     list.push({
       title: "Vendor payable spike",
       severity: uploadSignals && uploadSignals.savingsOpportunity30d > 35_000 ? "Medium" : "Low",
@@ -122,12 +146,19 @@ export default function CashFlowRadarPage() {
     return list;
   }, [uploadSignals, burn30, debtService, forecast]);
 
-  const actions = [
-    "Delay non-critical spend two weeks to rebuild cushion.",
-    "Improve collections: focus top 10 overdue AR buckets with structured cadence.",
-    "Refinance highest-coupon tranche if covenants allow — see Debt intelligence.",
-    "Reduce overtime in high-variance teams until cash gradient stabilizes.",
-  ];
+  const actions = uploadSignals
+    ? [
+        "Review flagged transactions before next payroll cycle.",
+        "Chase any overdue client invoices — delays directly affect cash runway.",
+        "Check for duplicate vendor payments — these drain cash silently.",
+        "Reduce overtime in high-cost shifts to protect monthly burn rate.",
+      ]
+    : [
+        "Delay non-critical spend two weeks to rebuild cushion.",
+        "Improve collections: focus top 10 overdue AR buckets.",
+        "Refinance highest-coupon tranche if covenants allow.",
+        "Reduce overtime in high-variance teams until cash stabilizes.",
+      ];
 
   const chartData = forecast.map((p) => ({ ...p, target: openingCash * 0.22 }));
 
@@ -142,6 +173,20 @@ export default function CashFlowRadarPage() {
       </div>
 
       <WorkspaceTrustBanner />
+
+      {uploadSignals && (
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">
+            Upload data active —{" "}
+          </span>
+          cash position estimated from your file.
+          Monthly burn: $
+          {Math.round(burn30).toLocaleString()}.
+          Opening balance modeled at 3 months of
+          operating reserves. Debt service excluded
+          — add loan data for full picture.
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {(

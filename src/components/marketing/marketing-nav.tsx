@@ -46,7 +46,7 @@ export function MarketingNav() {
           <span className="hidden flex-col leading-tight sm:flex">
             <span className="text-sm font-semibold tracking-tight text-white">Spendda</span>
             <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
-              Spend + payroll intelligence
+              Data + finance infrastructure
             </span>
           </span>
         </Link>

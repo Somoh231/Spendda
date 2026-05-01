@@ -97,3 +97,128 @@ export function buildUploadPilotSnapshot(opts: {
     analytics,
   };
 }
+
+export type ChatContext = {
+  dataSource: string;
+  orgType?: string;
+  organizationName?: string;
+  entity?: string;
+  filename?: string;
+  rowCount: number;
+  totalSpend: number;
+  totalPayroll: number;
+  payrollRatioPct: number;
+  topVendors: string[];
+  dateRange: { from: string | null; to: string | null };
+  flagCount: number;
+  anomalies: string[];
+  warnings: string[];
+};
+
+export function buildChatContext(opts: {
+  dataSource: string;
+  spendDataset?: WorkspaceDataset | null;
+  payrollDataset?: WorkspaceDataset | null;
+  activeDatasetLabel?: string;
+  orgType?: string;
+  organizationName?: string;
+  entity?: string;
+}): ChatContext {
+  const { dataSource, spendDataset, payrollDataset, orgType, organizationName, entity, activeDatasetLabel } = opts;
+
+  const isUpload = dataSource === "upload";
+
+  if (!isUpload) {
+    return {
+      dataSource,
+      orgType,
+      organizationName,
+      entity,
+      rowCount: 0,
+      totalSpend: 0,
+      totalPayroll: 0,
+      payrollRatioPct: 0,
+      topVendors: [],
+      dateRange: { from: null, to: null },
+      flagCount: 0,
+      anomalies: [],
+      warnings: [],
+    };
+  }
+
+  const spendRows =
+    spendDataset?.kind === "spend"
+      ? (spendDataset.rows as Array<{
+          vendor?: string;
+          amount?: number;
+          date?: string | null;
+          flags?: string[];
+        }>)
+      : [];
+
+  const payrollRows =
+    payrollDataset?.kind === "payroll"
+      ? (payrollDataset.rows as Array<{
+          salaryCurrent?: number;
+        }>)
+      : [];
+
+  const totalSpend = spendRows.reduce(
+    (s, r) => s + (typeof r.amount === "number" && r.amount > 0 ? r.amount : 0),
+    0,
+  );
+
+  const totalPayroll = payrollRows.reduce(
+    (s, r) => s + (typeof r.salaryCurrent === "number" && r.salaryCurrent > 0 ? r.salaryCurrent : 0),
+    0,
+  );
+
+  const vendorMap = new Map<string, number>();
+  for (const r of spendRows) {
+    const v = String(r.vendor ?? "").trim();
+    const a = typeof r.amount === "number" ? r.amount : 0;
+    if (v && a > 0) vendorMap.set(v, (vendorMap.get(v) ?? 0) + a);
+  }
+  const topVendors = [...vendorMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, amt]) => `${name} ($${Math.round(amt).toLocaleString()})`);
+
+  const dates = spendRows
+    .map((r) => String(r.date ?? "").slice(0, 10))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+
+  const flagged = spendRows.filter((r) => Array.isArray(r.flags) && r.flags.length > 0);
+  const anomalySet = new Set<string>();
+  for (const r of flagged) {
+    for (const f of r.flags ?? []) anomalySet.add(String(f));
+  }
+
+  const warnings: string[] = [];
+  if (topVendors.length === 0)
+    warnings.push("No vendor column detected — upload a file with a vendor or payee column");
+  if (dates.length === 0) warnings.push("No date column detected — time-based analysis unavailable");
+
+  const filename = activeDatasetLabel?.split("·")[0]?.trim() ?? "uploaded file";
+
+  return {
+    dataSource,
+    orgType,
+    organizationName,
+    entity,
+    filename,
+    rowCount: spendRows.length + payrollRows.length,
+    totalSpend,
+    totalPayroll,
+    payrollRatioPct: totalSpend > 0 ? Math.round((totalPayroll / totalSpend) * 100) : 0,
+    topVendors,
+    dateRange: {
+      from: dates[0] ?? null,
+      to: dates[dates.length - 1] ?? null,
+    },
+    flagCount: flagged.length,
+    anomalies: [...anomalySet].slice(0, 5),
+    warnings,
+  };
+}
